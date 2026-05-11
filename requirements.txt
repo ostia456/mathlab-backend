@@ -10,3 +10,5 @@ sympy==1.12
 networkx==3.2.1
 python-dotenv==1.0.0
 gunicorn==23.0.0
+scipy==1.14.1
+matplotlib==3.9.3
