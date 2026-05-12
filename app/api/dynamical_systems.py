@@ -1,17 +1,50 @@
 """
-Dynamical Systems API Routes
+Dynamical Systems API Routes - FastAPI
 Systèmes Dynamiques - EDO, portraits de phase, stabilité
 """
-from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
 import numpy as np
-from scipy.integrate import odeint, solve_ivp
+from scipy.integrate import odeint
 from scipy.optimize import fsolve
-import json
+from typing import Optional, List, Union
+from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException
 
-ds_bp = Blueprint('dynamical_systems', __name__)
+# ─────────────────────────────────────────────────────────────────────────────
+# Router
+# ─────────────────────────────────────────────────────────────────────────────
+router = APIRouter()
 
-# Predefined systems
+# ─────────────────────────────────────────────────────────────────────────────
+# Schémas Pydantic
+# ─────────────────────────────────────────────────────────────────────────────
+class SimulateRequest(BaseModel):
+    system: str = Field(default='harmonic_oscillator')
+    params: dict = Field(default_factory=dict)
+    initial_state: List[float] = Field(default=[1.0, 0.0])
+    t_span: List[float] = Field(default=[0, 20])
+    dt: float = Field(default=0.01)
+
+class PhasePortraitRequest(BaseModel):
+    system: str = Field(default='harmonic_oscillator')
+    params: dict = Field(default_factory=dict)
+    x_range: List[float] = Field(default=[-3, 3])
+    y_range: List[float] = Field(default=[-3, 3])
+    grid_size: int = Field(default=20, ge=5, le=100)
+
+class EquilibriumRequest(BaseModel):
+    system: str = Field(default='harmonic_oscillator')
+    params: dict = Field(default_factory=dict)
+    guesses: List[List[float]] = Field(default=[[0, 0], [1, 1], [-1, -1]])
+
+class BifurcationRequest(BaseModel):
+    system: str = Field(default='harmonic_oscillator')
+    param_name: str = Field(default='mu')
+    param_range: List[float] = Field(default=[0, 2])
+    num_points: int = Field(default=50, ge=10, le=500)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Systèmes prédéfinis (inchangés)
+# ─────────────────────────────────────────────────────────────────────────────
 SYSTEMS = {
     'harmonic_oscillator': {
         'name': 'Oscillateur Harmonique',
@@ -51,41 +84,28 @@ SYSTEMS = {
     }
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Fonctions système (inchangées)
+# ─────────────────────────────────────────────────────────────────────────────
 def harmonic_oscillator(state, t, omega, gamma):
-    """Oscillateur harmonique amorti"""
     x, v = state
-    dxdt = v
-    dvdt = -omega**2 * x - gamma * v
-    return [dxdt, dvdt]
+    return [v, -omega**2 * x - gamma * v]
 
 def lotka_volterra(state, t, alpha, beta, gamma, delta):
-    """Modèle Lotka-Volterra"""
     x, y = state
-    dxdt = alpha * x - beta * x * y
-    dydt = delta * x * y - gamma * y
-    return [dxdt, dydt]
+    return [alpha * x - beta * x * y, delta * x * y - gamma * y]
 
 def lorenz_system(state, t, sigma, rho, beta):
-    """Système de Lorenz"""
     x, y, z = state
-    dxdt = sigma * (y - x)
-    dydt = x * (rho - z) - y
-    dzdt = x * y - beta * z
-    return [dxdt, dydt, dzdt]
+    return [sigma * (y - x), x * (rho - z) - y, x * y - beta * z]
 
 def pendulum(state, t, g, L, damping):
-    """Pendule simple"""
     theta, omega = state
-    dthetadt = omega
-    domegadt = -(g / L) * np.sin(theta) - damping * omega
-    return [dthetadt, domegadt]
+    return [omega, -(g / L) * np.sin(theta) - damping * omega]
 
 def van_der_pol(state, t, mu, omega):
-    """Oscillateur de Van der Pol"""
     x, y = state
-    dxdt = y
-    dydt = mu * (1 - x**2) * y - omega**2 * x
-    return [dxdt, dydt]
+    return [y, mu * (1 - x**2) * y - omega**2 * x]
 
 SYSTEM_FUNCTIONS = {
     'harmonic_oscillator': harmonic_oscillator,
@@ -95,98 +115,70 @@ SYSTEM_FUNCTIONS = {
     'van_der_pol': van_der_pol
 }
 
-@ds_bp.route('/systems', methods=['GET'])
+# ─────────────────────────────────────────────────────────────────────────────
+# Routes
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get("/systems")
 def get_systems():
     """Get list of available dynamical systems"""
-    return jsonify({
-        'systems': [
-            {'id': k, **v} for k, v in SYSTEMS.items()
-        ]
-    })
+    return {
+        'systems': [{'id': k, **v} for k, v in SYSTEMS.items()]
+    }
 
-@ds_bp.route('/simulate', methods=['POST'])
-def simulate():
+@router.post("/simulate")
+def simulate(data: SimulateRequest):
     """Simulate a dynamical system"""
-    data = request.get_json()
+    if data.system not in SYSTEM_FUNCTIONS:
+        raise HTTPException(status_code=400, detail=f"Unknown system: {data.system}")
     
-    system_id = data.get('system', 'harmonic_oscillator')
-    params = data.get('params', {})
-    initial_state = data.get('initial_state', [1.0, 0.0])
-    t_span = data.get('t_span', [0, 20])
-    dt = data.get('dt', 0.01)
-    
-    if system_id not in SYSTEM_FUNCTIONS:
-        return jsonify({'error': f'Unknown system: {system_id}'}), 400
-    
-    # Get system function and default params
-    system_func = SYSTEM_FUNCTIONS[system_id]
-    default_params = SYSTEMS[system_id]['params']
-    
-    # Merge with user params
-    merged_params = {**default_params, **params}
+    system_func = SYSTEM_FUNCTIONS[data.system]
+    default_params = SYSTEMS[data.system]['params']
+    merged_params = {**default_params, **data.params}
     param_values = list(merged_params.values())
     
-    # Time array
-    t = np.arange(t_span[0], t_span[1], dt)
+    t = np.arange(data.t_span[0], data.t_span[1], data.dt)
     
-    # Solve ODE
     try:
-        solution = odeint(system_func, initial_state, t, args=tuple(param_values))
-        
-        # Convert to lists for JSON
-        result = {
+        solution = odeint(system_func, data.initial_state, t, args=tuple(param_values))
+        return {
             't': t.tolist(),
             'solution': solution.tolist(),
-            'dimensions': len(initial_state),
+            'dimensions': len(data.initial_state),
             'params': merged_params,
-            'system': system_id
+            'system': data.system
         }
-        
-        return jsonify(result)
-    
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-@ds_bp.route('/phase-portrait', methods=['POST'])
-def phase_portrait():
+@router.post("/phase-portrait")
+def phase_portrait(data: PhasePortraitRequest):
     """Generate phase portrait data"""
-    data = request.get_json()
+    if data.system not in SYSTEM_FUNCTIONS:
+        raise HTTPException(status_code=400, detail=f"Unknown system: {data.system}")
     
-    system_id = data.get('system', 'harmonic_oscillator')
-    params = data.get('params', {})
-    x_range = data.get('x_range', [-3, 3])
-    y_range = data.get('y_range', [-3, 3])
-    grid_size = data.get('grid_size', 20)
-    
-    if system_id not in SYSTEM_FUNCTIONS:
-        return jsonify({'error': f'Unknown system: {system_id}'}), 400
-    
-    system_func = SYSTEM_FUNCTIONS[system_id]
-    default_params = SYSTEMS[system_id]['params']
-    merged_params = {**default_params, **params}
+    system_func = SYSTEM_FUNCTIONS[data.system]
+    default_params = SYSTEMS[data.system]['params']
+    merged_params = {**default_params, **data.params}
     param_values = list(merged_params.values())
     
-    # Create grid
-    x = np.linspace(x_range[0], x_range[1], grid_size)
-    y = np.linspace(y_range[0], y_range[1], grid_size)
+    x = np.linspace(data.x_range[0], data.x_range[1], data.grid_size)
+    y = np.linspace(data.y_range[0], data.y_range[1], data.grid_size)
     X, Y = np.meshgrid(x, y)
     
-    # Compute vector field
     U = np.zeros_like(X)
     V = np.zeros_like(Y)
     
-    for i in range(grid_size):
-        for j in range(grid_size):
+    for i in range(data.grid_size):
+        for j in range(data.grid_size):
             derivatives = system_func([X[i, j], Y[i, j]], 0, *param_values)
             U[i, j] = derivatives[0]
             V[i, j] = derivatives[1]
     
-    # Normalize for better visualization
     magnitude = np.sqrt(U**2 + V**2)
     U_norm = U / (magnitude + 1e-10)
     V_norm = V / (magnitude + 1e-10)
     
-    return jsonify({
+    return {
         'X': X.tolist(),
         'Y': Y.tolist(),
         'U': U.tolist(),
@@ -194,38 +186,29 @@ def phase_portrait():
         'U_norm': U_norm.tolist(),
         'V_norm': V_norm.tolist(),
         'magnitude': magnitude.tolist()
-    })
+    }
 
-@ds_bp.route('/equilibrium', methods=['POST'])
-def find_equilibrium():
+@router.post("/equilibrium")
+def find_equilibrium(data: EquilibriumRequest):
     """Find equilibrium points and analyze stability"""
-    data = request.get_json()
+    if data.system not in SYSTEM_FUNCTIONS:
+        raise HTTPException(status_code=400, detail=f"Unknown system: {data.system}")
     
-    system_id = data.get('system', 'harmonic_oscillator')
-    params = data.get('params', {})
-    guesses = data.get('guesses', [[0, 0], [1, 1], [-1, -1]])
-    
-    if system_id not in SYSTEM_FUNCTIONS:
-        return jsonify({'error': f'Unknown system: {system_id}'}), 400
-    
-    system_func = SYSTEM_FUNCTIONS[system_id]
-    default_params = SYSTEMS[system_id]['params']
-    merged_params = {**default_params, **params}
+    system_func = SYSTEM_FUNCTIONS[data.system]
+    default_params = SYSTEMS[data.system]['params']
+    merged_params = {**default_params, **data.params}
     param_values = list(merged_params.values())
     
-    # Find equilibrium points
     equilibria = []
     found_points = set()
     
-    for guess in guesses:
+    for guess in data.guesses:
         try:
             eq = fsolve(lambda s: system_func(s, 0, *param_values), guess, full_output=False)
-            # Round to avoid duplicates
             eq_rounded = tuple(np.round(eq, 6))
             if eq_rounded not in found_points:
                 found_points.add(eq_rounded)
                 
-                # Compute Jacobian numerically for stability analysis
                 eps = 1e-8
                 n = len(eq)
                 J = np.zeros((n, n))
@@ -235,9 +218,7 @@ def find_equilibrium():
                     J[:, i] = (np.array(system_func(eq + d, 0, *param_values)) - 
                                np.array(system_func(eq - d, 0, *param_values))) / (2 * eps)
                 
-                # Eigenvalues
                 eigenvalues = np.linalg.eigvals(J)
-
                 eigenvalues_json = []
                 for ev in eigenvalues:
                     if np.isreal(ev):
@@ -248,7 +229,6 @@ def find_equilibrium():
                             'imag': float(np.imag(ev)),
                         })
                 
-                # Stability classification
                 real_parts = np.real(eigenvalues)
                 if all(r < 0 for r in real_parts):
                     stability = 'stable'
@@ -263,31 +243,17 @@ def find_equilibrium():
                     'stability': stability,
                     'jacobian': J.tolist()
                 })
-        except:
+        except Exception:
             pass
     
-    return jsonify({
-        'equilibria': equilibria,
-        'count': len(equilibria)
-    })
+    return {'equilibria': equilibria, 'count': len(equilibria)}
 
-@ds_bp.route('/bifurcation', methods=['POST'])
-def bifurcation_analysis():
+@router.post("/bifurcation")
+def bifurcation_analysis(data: BifurcationRequest):
     """Simple bifurcation analysis by varying a parameter"""
-    data = request.get_json()
-    
-    system_id = data.get('system', 'harmonic_oscillator')
-    param_name = data.get('param_name', 'mu')
-    param_range = data.get('param_range', [0, 2])
-    num_points = data.get('num_points', 50)
-    
-    # This is a simplified bifurcation diagram
-    # For more complex analysis, dedicated libraries like PyDSTool would be better
-    
-    param_values = np.linspace(param_range[0], param_range[1], num_points)
-    
-    return jsonify({
-        'param_name': param_name,
+    param_values = np.linspace(data.param_range[0], data.param_range[1], data.num_points)
+    return {
+        'param_name': data.param_name,
         'param_values': param_values.tolist(),
         'note': 'Bifurcation analysis requires specialized tools. Consider using PyDSTool or AUTO.'
-    })
+    }

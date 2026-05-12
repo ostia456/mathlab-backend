@@ -1,30 +1,32 @@
 """
 Exercise and ExerciseAttempt Models
 """
-from app import db
-from datetime import datetime
-import json
+from datetime import datetime, timezone
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey, JSON
+from sqlalchemy.orm import relationship
+from app.models import Base
 
-class Exercise(db.Model):
+
+class Exercise(Base):
     __tablename__ = 'exercises'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(200), nullable=False)
-    description = db.Column(db.Text, nullable=False)
-    module = db.Column(db.String(50), nullable=False)  # dynamical_systems, numerical_methods, linear_algebra, graph_theory
-    difficulty = db.Column(db.Integer, default=1)  # 1-5
-    problem_data = db.Column(db.JSON, nullable=False)  # Generated problem parameters
-    solution_data = db.Column(db.JSON, nullable=False)  # Correct solution
-    hints = db.Column(db.JSON, default=list)
-    time_limit = db.Column(db.Integer, default=0)  # 0 = no limit, in seconds
-    points = db.Column(db.Integer, default=10)
-    is_active = db.Column(db.Boolean, default=True)
-    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=False)
+    module = Column(String(50), nullable=False)
+    difficulty = Column(Integer, default=1)
+    problem_data = Column(JSON, nullable=False)
+    solution_data = Column(JSON, nullable=False)
+    hints = Column(JSON, default=list)
+    time_limit = Column(Integer, default=0)
+    points = Column(Integer, default=10)
+    is_active = Column(Boolean, default=True)
+    created_by = Column(Integer, ForeignKey('users.id'))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
     # Relationships
-    attempts = db.relationship('ExerciseAttempt', backref='exercise', lazy='dynamic')
-    
+    attempts = relationship('ExerciseAttempt', back_populates='exercise', lazy='dynamic')
+
     def to_dict(self, include_solution=False):
         data = {
             'id': self.id,
@@ -43,20 +45,25 @@ class Exercise(db.Model):
             data['solution_data'] = self.solution_data
         return data
 
-class ExerciseAttempt(db.Model):
+
+class ExerciseAttempt(Base):
     __tablename__ = 'exercise_attempts'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    exercise_id = db.Column(db.Integer, db.ForeignKey('exercises.id'), nullable=False)
-    answer_data = db.Column(db.JSON)  # User's answer
-    is_correct = db.Column(db.Boolean)
-    score = db.Column(db.Float)  # 0-100
-    feedback = db.Column(db.Text)  # Personalized feedback
-    time_spent = db.Column(db.Integer)  # in seconds
-    attempt_number = db.Column(db.Integer, default=1)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    exercise_id = Column(Integer, ForeignKey('exercises.id'), nullable=False)
+    answer_data = Column(JSON)
+    is_correct = Column(Boolean)
+    score = Column(Float)
+    feedback = Column(Text)
+    time_spent = Column(Integer)
+    attempt_number = Column(Integer, default=1)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    user = relationship('User', back_populates='exercise_attempts')
+    exercise = relationship('Exercise', back_populates='attempts')
+
     def to_dict(self):
         return {
             'id': self.id,

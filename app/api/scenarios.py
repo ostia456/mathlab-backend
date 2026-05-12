@@ -1,173 +1,192 @@
 """
-Scenarios API Routes
+Scenarios API Routes - FastAPI
 Gestion des scénarios pédagogiques par les enseignants
 """
-from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
 import secrets
 import string
-from app import db
+from typing import Optional, Any
+from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import or_
+
+from app import SessionLocal
 from app.models.scenario import Scenario
 from app.models.user import User
+from app.api.auth import get_current_user
 
-sc_bp = Blueprint('scenarios', __name__)
+# ─────────────────────────────────────────────────────────────────────────────
+# Router
+# ─────────────────────────────────────────────────────────────────────────────
+router = APIRouter()
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Schémas Pydantic
+# ─────────────────────────────────────────────────────────────────────────────
+class CreateScenarioRequest(BaseModel):
+    title: str = Field(default='Nouveau scénario')
+    description: Optional[str] = ''
+    module: str = Field(default='dynamical_systems')
+    config: dict = Field(default_factory=dict)
+    locked_params: list = Field(default_factory=list)
+    instructions: Optional[str] = ''
+    is_public: bool = False
+
+class UpdateScenarioRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    config: Optional[dict] = None
+    locked_params: Optional[list] = None
+    instructions: Optional[str] = None
+    is_public: Optional[bool] = None
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dépendance DB
+# ─────────────────────────────────────────────────────────────────────────────
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Utilitaire
+# ─────────────────────────────────────────────────────────────────────────────
 def generate_share_code():
-    """Generate a random share code"""
     return ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
 
-@sc_bp.route('/', methods=['GET'])
-@jwt_required()
-def list_scenarios():
+# ─────────────────────────────────────────────────────────────────────────────
+# Routes
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get("/")
+def list_scenarios(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """List all scenarios for the current user"""
-    user_id = int(get_jwt_identity())
-    user = User.query.get(user_id)
-    
-    if user.is_teacher():
-        # Teachers see their own scenarios and public ones
-        scenarios = Scenario.query.filter(
-            (Scenario.created_by == user_id) | (Scenario.is_public == True)
+    if current_user.is_teacher():
+        scenarios = db.query(Scenario).filter(
+            or_(Scenario.created_by == current_user.id, Scenario.is_public == True)
         ).all()
     else:
-        # Students see public scenarios and those shared with them
-        scenarios = Scenario.query.filter_by(is_public=True).all()
-    
-    return jsonify({'scenarios': [s.to_dict() for s in scenarios]})
+        scenarios = db.query(Scenario).filter_by(is_public=True).all()
+    return {'scenarios': [s.to_dict() for s in scenarios]}
 
-@sc_bp.route('/', methods=['POST'])
-@jwt_required()
-def create_scenario():
+@router.post("/", status_code=201)
+def create_scenario(
+    data: CreateScenarioRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Create a new scenario"""
-    user_id = int(get_jwt_identity())
-    user = User.query.get(user_id)
-    
-    if not user.is_teacher():
-        return jsonify({'error': 'Only teachers can create scenarios'}), 403
-    
-    data = request.get_json()
+    if not current_user.is_teacher():
+        raise HTTPException(status_code=403, detail="Only teachers can create scenarios")
     
     scenario = Scenario(
-        title=data.get('title', 'Nouveau scénario'),
-        description=data.get('description', ''),
-        module=data.get('module', 'dynamical_systems'),
-        created_by=user_id,
-        config=data.get('config', {}),
-        locked_params=data.get('locked_params', []),
-        instructions=data.get('instructions', ''),
-        is_public=data.get('is_public', False),
+        title=data.title,
+        description=data.description or '',
+        module=data.module,
+        created_by=current_user.id,
+        config=data.config,
+        locked_params=data.locked_params,
+        instructions=data.instructions or '',
+        is_public=data.is_public,
         share_code=generate_share_code()
     )
-    
-    db.session.add(scenario)
-    db.session.commit()
-    
-    return jsonify({
-        'message': 'Scenario created successfully',
-        'scenario': scenario.to_dict()
-    }), 201
+    db.add(scenario)
+    db.commit()
+    db.refresh(scenario)
+    return {'message': 'Scenario created successfully', 'scenario': scenario.to_dict()}
 
-@sc_bp.route('/<int:scenario_id>', methods=['GET'])
-@jwt_required()
-def get_scenario(scenario_id):
+@router.get("/{scenario_id}")
+def get_scenario(
+    scenario_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Get a specific scenario"""
-    scenario = Scenario.query.get(scenario_id)
-    
+    scenario = db.query(Scenario).get(scenario_id)
     if not scenario:
-        return jsonify({'error': 'Scenario not found'}), 404
-    
-    return jsonify({'scenario': scenario.to_dict()})
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    return {'scenario': scenario.to_dict()}
 
-@sc_bp.route('/<int:scenario_id>', methods=['PUT'])
-@jwt_required()
-def update_scenario(scenario_id):
+@router.put("/{scenario_id}")
+def update_scenario(
+    scenario_id: int,
+    data: UpdateScenarioRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Update a scenario"""
-    user_id = int(get_jwt_identity())
-    scenario = Scenario.query.get(scenario_id)
-    
+    scenario = db.query(Scenario).get(scenario_id)
     if not scenario:
-        return jsonify({'error': 'Scenario not found'}), 404
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    if scenario.created_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Unauthorized")
     
-    if scenario.created_by != user_id:
-        return jsonify({'error': 'Unauthorized'}), 403
+    update_data = data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(scenario, key, value)
     
-    data = request.get_json()
-    
-    scenario.title = data.get('title', scenario.title)
-    scenario.description = data.get('description', scenario.description)
-    scenario.config = data.get('config', scenario.config)
-    scenario.locked_params = data.get('locked_params', scenario.locked_params)
-    scenario.instructions = data.get('instructions', scenario.instructions)
-    scenario.is_public = data.get('is_public', scenario.is_public)
-    
-    db.session.commit()
-    
-    return jsonify({
-        'message': 'Scenario updated successfully',
-        'scenario': scenario.to_dict()
-    })
+    db.commit()
+    return {'message': 'Scenario updated successfully', 'scenario': scenario.to_dict()}
 
-@sc_bp.route('/<int:scenario_id>', methods=['DELETE'])
-@jwt_required()
-def delete_scenario(scenario_id):
+@router.delete("/{scenario_id}")
+def delete_scenario(
+    scenario_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Delete a scenario"""
-    user_id = int(get_jwt_identity())
-    scenario = Scenario.query.get(scenario_id)
-    
+    scenario = db.query(Scenario).get(scenario_id)
     if not scenario:
-        return jsonify({'error': 'Scenario not found'}), 404
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    if scenario.created_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Unauthorized")
     
-    if scenario.created_by != user_id:
-        return jsonify({'error': 'Unauthorized'}), 403
-    
-    db.session.delete(scenario)
-    db.session.commit()
-    
-    return jsonify({'message': 'Scenario deleted successfully'})
+    db.delete(scenario)
+    db.commit()
+    return {'message': 'Scenario deleted successfully'}
 
-@sc_bp.route('/join/<string:share_code>', methods=['POST'])
-@jwt_required()
-def join_scenario(share_code):
+@router.post("/join/{share_code}")
+def join_scenario(
+    share_code: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Join a scenario using share code"""
-    scenario = Scenario.query.filter_by(share_code=share_code).first()
-    
+    scenario = db.query(Scenario).filter_by(share_code=share_code).first()
     if not scenario:
-        return jsonify({'error': 'Invalid share code'}), 404
-    
-    return jsonify({
-        'scenario': scenario.to_dict()
-    })
+        raise HTTPException(status_code=404, detail="Invalid share code")
+    return {'scenario': scenario.to_dict()}
 
-@sc_bp.route('/<int:scenario_id>/clone', methods=['POST'])
-@jwt_required()
-def clone_scenario(scenario_id):
+@router.post("/{scenario_id}/clone", status_code=201)
+def clone_scenario(
+    scenario_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Clone an existing scenario"""
-    user_id = int(get_jwt_identity())
-    user = User.query.get(user_id)
+    if not current_user.is_teacher():
+        raise HTTPException(status_code=403, detail="Only teachers can clone scenarios")
     
-    if not user.is_teacher():
-        return jsonify({'error': 'Only teachers can clone scenarios'}), 403
-    
-    original = Scenario.query.get(scenario_id)
-    
+    original = db.query(Scenario).get(scenario_id)
     if not original:
-        return jsonify({'error': 'Scenario not found'}), 404
+        raise HTTPException(status_code=404, detail="Scenario not found")
     
     cloned = Scenario(
         title=f"{original.title} (Copie)",
         description=original.description,
         module=original.module,
-        created_by=user_id,
+        created_by=current_user.id,
         config=original.config,
         locked_params=original.locked_params,
         instructions=original.instructions,
         is_public=False,
         share_code=generate_share_code()
     )
-    
-    db.session.add(cloned)
-    db.session.commit()
-    
-    return jsonify({
-        'message': 'Scenario cloned successfully',
-        'scenario': cloned.to_dict()
-    }), 201
+    db.add(cloned)
+    db.commit()
+    db.refresh(cloned)
+    return {'message': 'Scenario cloned successfully', 'scenario': cloned.to_dict()}

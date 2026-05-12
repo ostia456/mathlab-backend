@@ -1,32 +1,38 @@
 """
 Scenario Model - Teacher-created learning scenarios
 """
-from app import db
-from datetime import datetime
+from datetime import datetime, timezone
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, JSON
+from sqlalchemy.orm import relationship
+from app.models import Base
 
-class Scenario(db.Model):
+
+class Scenario(Base):
     __tablename__ = 'scenarios'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(200), nullable=False)
-    description = db.Column(db.Text)
-    module = db.Column(db.String(50), nullable=False)
-    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String(200), nullable=False)
+    description = Column(Text)
+    module = Column(String(50), nullable=False)
+    created_by = Column(Integer, ForeignKey('users.id'), nullable=False)
+
     # Scenario configuration
-    config = db.Column(db.JSON, nullable=False)  # Module-specific configuration
-    locked_params = db.Column(db.JSON, default=list)  # Parameters students cannot modify
-    instructions = db.Column(db.Text)  # Instructions for students
-    
+    config = Column(JSON, nullable=False)
+    locked_params = Column(JSON, default=list)
+    instructions = Column(Text)
+
     # Sharing
-    is_public = db.Column(db.Boolean, default=False)
-    share_code = db.Column(db.String(20), unique=True)
-    
+    is_public = Column(Boolean, default=False)
+    share_code = Column(String(20), unique=True)
+
     # Metadata
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    is_active = db.Column(db.Boolean, default=True)
-    
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    is_active = Column(Boolean, default=True)
+
+    # Relationship
+    creator = relationship('User', back_populates='scenarios')
+
     def to_dict(self):
         return {
             'id': self.id,

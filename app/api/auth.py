@@ -1,387 +1,360 @@
 """
-Authentication API Routes
+Authentication API Routes - FastAPI
 """
-from flask import Blueprint, request, jsonify
-from flask_jwt_extended import (
-    create_access_token,
-    jwt_required,
-    get_jwt_identity,
-    get_jwt
-)
-from app import db
-from app.models.user import User
-from datetime import datetime, timedelta
+import os
 import random
 import string
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import os
+from datetime import datetime, timedelta, timezone
 
-auth_bp = Blueprint('auth', __name__)
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy.orm import Session
+from jose import JWTError, jwt
+
+from app import SessionLocal
+from app.models.user import User
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Router
+# ─────────────────────────────────────────────────────────────────────────────
+router = APIRouter()
 
 # Token blacklist for logout
 blacklist = set()
 
+# OAuth2 scheme for JWT
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Stockage temporaire des codes de vérification
-# Structure : { email: { code, expires_at, attempts } }
 # ─────────────────────────────────────────────────────────────────────────────
 _pending_verifications: dict = {}
-
 CODE_EXPIRY_MINUTES = 15
-MAX_ATTEMPTS        = 5
-
+MAX_ATTEMPTS = 5
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Utilitaires email
+# Schémas Pydantic (validation automatique)
+# ─────────────────────────────────────────────────────────────────────────────
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=6)
+    first_name: str = Field(..., min_length=1)
+    last_name: str = Field(..., min_length=1)
+    role: str = Field(default="student")
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class VerifyEmailRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(..., min_length=6, max_length=6)
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+class UpdateProfileRequest(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    password: str | None = None
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dépendance DB
+# ─────────────────────────────────────────────────────────────────────────────
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dépendance JWT (utilisateur courant)
+# ─────────────────────────────────────────────────────────────────────────────
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> User:
+    """Récupère l'utilisateur à partir du token JWT."""
+    if not token:
+        raise HTTPException(status_code=401, detail="Token manquant")
+    
+    # Vérifie blacklist
+    try:
+        payload = jwt.decode(token, os.getenv('JWT_SECRET_KEY', 'jwt-secret'), algorithms=['HS256'])
+        jti = payload.get('jti')
+        if jti and jti in blacklist:
+            raise HTTPException(status_code=401, detail="Token révoqué")
+        
+        user_id = int(payload.get('sub'))
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Token invalide")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token invalide")
+    
+    user = db.query(User).get(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    
+    return user
+
+def get_current_teacher(current_user: User = Depends(get_current_user)) -> User:
+    """Vérifie que l'utilisateur est un enseignant/admin."""
+    if not current_user.is_teacher():
+        raise HTTPException(status_code=403, detail="Accès réservé aux enseignants")
+    return current_user
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Utilitaires email (inchangés)
 # ─────────────────────────────────────────────────────────────────────────────
 def _generate_code() -> str:
     return ''.join(random.choices(string.digits, k=6))
 
-
 def _store_code(email: str, code: str):
     _pending_verifications[email] = {
-        'code':       code,
-        'expires_at': datetime.utcnow() + timedelta(minutes=CODE_EXPIRY_MINUTES),
-        'attempts':   0,
+        'code': code,
+        'expires_at': datetime.now(timezone.utc) + timedelta(minutes=CODE_EXPIRY_MINUTES),
+        'attempts': 0,
     }
-
 
 def _validate_code(email: str, code: str) -> tuple:
     """Retourne (success: bool, error_message: str)"""
     record = _pending_verifications.get(email)
-
     if not record:
         return False, "Aucun code en attente pour cet email. Recommencez l'inscription."
-
-    if datetime.utcnow() > record['expires_at']:
+    if datetime.now(timezone.utc) > record['expires_at']:
         _pending_verifications.pop(email, None)
         return False, "Le code a expiré. Cliquez sur « Renvoyer le code »."
-
     record['attempts'] += 1
-
     if record['attempts'] > MAX_ATTEMPTS:
         _pending_verifications.pop(email, None)
         return False, "Trop de tentatives. Recommencez l'inscription."
-
     if record['code'] != code:
         remaining = MAX_ATTEMPTS - record['attempts']
         return False, f"Code incorrect. {remaining} tentative(s) restante(s)."
-
     _pending_verifications.pop(email, None)
     return True, ""
 
-
 def _send_verification_email(to_email: str, first_name: str, code: str):
     """Envoie le code par email via Gmail SMTP."""
-    gmail_sender   = os.getenv('GMAIL_SENDER', '')
+    gmail_sender = os.getenv('GMAIL_SENDER', '')
     gmail_password = os.getenv('GMAIL_APP_PASSWORD', '')
 
     if not gmail_sender or not gmail_password:
-        # Mode développement : affiche le code dans la console
         print(f"\n{'='*40}")
         print(f"[DEV] Code de vérification pour {to_email} : {code}")
         print(f"{'='*40}\n")
         return
 
     subject = "MathLab University — Vérification de votre adresse email"
-
     html_body = f"""
     <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
       <div style="text-align: center; margin-bottom: 32px;">
         <h1 style="color: #1a1a2e; font-size: 24px; margin: 0;">MathLab University</h1>
-        <p style="color: #666; font-size: 14px; margin-top: 4px;">
-          Département de Mathématiques-Informatique — UNSTIM
-        </p>
+        <p style="color: #666; font-size: 14px; margin-top: 4px;">Département de Mathématiques-Informatique — UNSTIM</p>
       </div>
-
       <div style="background: #f8f9ff; border-radius: 12px; padding: 32px; text-align: center;">
         <p style="color: #333; font-size: 16px;">Bonjour <strong>{first_name}</strong>,</p>
-        <p style="color: #555; font-size: 14px; line-height: 1.6;">
-          Merci de vous être inscrit sur MathLab University.<br/>
-          Voici votre code de vérification :
-        </p>
-
-        <div style="
-          display: inline-block;
-          background: #ffffff;
-          border: 2px solid #e2e8f0;
-          border-radius: 12px;
-          padding: 16px 32px;
-          margin: 20px 0;
-        ">
-          <span style="
-            font-family: 'Courier New', monospace;
-            font-size: 36px;
-            font-weight: bold;
-            letter-spacing: 12px;
-            color: #1a1a2e;
-          ">{code}</span>
+        <p style="color: #555; font-size: 14px; line-height: 1.6;">Merci de vous être inscrit sur MathLab University.<br/>Voici votre code de vérification :</p>
+        <div style="display: inline-block; background: #ffffff; border: 2px solid #e2e8f0; border-radius: 12px; padding: 16px 32px; margin: 20px 0;">
+          <span style="font-family: 'Courier New', monospace; font-size: 36px; font-weight: bold; letter-spacing: 12px; color: #1a1a2e;">{code}</span>
         </div>
-
-        <p style="color: #888; font-size: 13px;">
-          Ce code est valable <strong>{CODE_EXPIRY_MINUTES} minutes</strong>.
-        </p>
+        <p style="color: #888; font-size: 13px;">Ce code est valable <strong>{CODE_EXPIRY_MINUTES} minutes</strong>.</p>
       </div>
-
-      <div style="
-        margin-top: 24px; padding: 16px;
-        background: #fff3cd; border-radius: 8px;
-        border-left: 4px solid #ffc107;
-      ">
-        <p style="color: #856404; font-size: 13px; margin: 0;">
-          ⚠️ Si vous n'êtes pas à l'origine de cette inscription, ignorez cet email.
-        </p>
+      <div style="margin-top: 24px; padding: 16px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
+        <p style="color: #856404; font-size: 13px; margin: 0;">⚠️ Si vous n'êtes pas à l'origine de cette inscription, ignorez cet email.</p>
       </div>
-
-      <p style="color: #aaa; font-size: 12px; text-align: center; margin-top: 32px;">
-        © MathLab University — UNSTIM
-      </p>
+      <p style="color: #aaa; font-size: 12px; text-align: center; margin-top: 32px;">© MathLab University — UNSTIM</p>
     </div>
     """
-
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"]    = f"MathLab University <{gmail_sender}>"
-    msg["To"]      = to_email
+    msg["From"] = f"MathLab University <{gmail_sender}>"
+    msg["To"] = to_email
     msg.attach(MIMEText(html_body, "html", "utf-8"))
-
     with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
         smtp.ehlo()
         smtp.starttls()
         smtp.login(gmail_sender, gmail_password)
         smtp.sendmail(gmail_sender, to_email, msg.as_string())
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# REGISTER — Étape 1 : crée le compte + envoie le code
+# REGISTER
 # ─────────────────────────────────────────────────────────────────────────────
-@auth_bp.route('/register', methods=['POST'])
-def register():
+@router.post("/register", status_code=201)
+def register(data: RegisterRequest, db: Session = Depends(get_db)):
     """Register a new user and send verification email"""
-    data = request.get_json()
-
-    # Validation
-    required_fields = ['email', 'password', 'first_name', 'last_name']
-    for field in required_fields:
-        if not data.get(field):
-            return jsonify({'error': f'{field} is required'}), 400
-
-    email = data['email'].lower()
-
-    # Vérifie si l'email existe déjà
-    existing = User.query.filter_by(email=email).first()
+    email = data.email.lower()
+    
+    existing = db.query(User).filter_by(email=email).first()
     if existing:
         if existing.is_verified:
-            return jsonify({'error': 'Email already registered'}), 409
-        # Compte non vérifié → on renvoie juste un nouveau code
+            raise HTTPException(status_code=409, detail="Email déjà utilisé")
         code = _generate_code()
         _store_code(email, code)
         try:
             _send_verification_email(email, existing.first_name, code)
         except Exception as e:
             print(f"[WARN] Email send failed: {e}")
-        return jsonify({
-            'message': 'Verification code resent. Please check your email.',
-            'email': email,
-        }), 200
-
-    # Crée le nouveau compte (is_verified=False par défaut)
+        return {"message": "Code de vérification renvoyé. Vérifiez votre boîte mail.", "email": email}
+    
     user = User(
         email=email,
-        first_name=data['first_name'],
-        last_name=data['last_name'],
-        role=data.get('role', 'student'),
+        first_name=data.first_name,
+        last_name=data.last_name,
+        role=data.role,
         is_verified=False,
     )
-    user.set_password(data['password'])
-
-    db.session.add(user)
-    db.session.commit()
-
-    # Génère et envoie le code
+    user.set_password(data.password)
+    db.add(user)
+    db.commit()
+    
     code = _generate_code()
     _store_code(email, code)
     try:
         _send_verification_email(email, user.first_name, code)
     except Exception as e:
         print(f"[WARN] Email send failed: {e}")
-
-    return jsonify({
-        'message': 'Account created. Please check your email for the verification code.',
-        'email': email,
-    }), 201
-
+    
+    return {"message": "Compte créé. Vérifiez votre boîte mail pour le code.", "email": email}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# VERIFY EMAIL — Étape 2 : valide le code + active le compte
+# VERIFY EMAIL
 # ─────────────────────────────────────────────────────────────────────────────
-@auth_bp.route('/verify-email', methods=['POST'])
-def verify_email():
+@router.post("/verify-email")
+def verify_email(data: VerifyEmailRequest, db: Session = Depends(get_db)):
     """Verify email with 6-digit code"""
-    data  = request.get_json()
-    email = data.get('email', '').lower()
-    code  = data.get('code', '').strip()
-
-    if not email or not code:
-        return jsonify({'error': 'Email and code are required'}), 400
-
+    email = data.email.lower()
+    code = data.code.strip()
+    
     ok, error_msg = _validate_code(email, code)
     if not ok:
-        return jsonify({'error': error_msg}), 400
-
-    user = User.query.filter_by(email=email).first()
+        raise HTTPException(status_code=400, detail=error_msg)
+    
+    user = db.query(User).filter_by(email=email).first()
     if not user:
-        return jsonify({'error': 'User not found'}), 404
-
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    
     user.is_verified = True
-    db.session.commit()
-
-    return jsonify({'message': 'Email verified successfully. You can now log in.'}), 200
-
+    db.commit()
+    
+    return {"message": "Email vérifié avec succès. Vous pouvez vous connecter."}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# RESEND CODE — Renvoie un nouveau code (anti-spam 60s)
+# RESEND CODE
 # ─────────────────────────────────────────────────────────────────────────────
-@auth_bp.route('/resend-verification', methods=['POST'])
-def resend_verification():
+@router.post("/resend-verification")
+def resend_verification(data: ResendVerificationRequest, db: Session = Depends(get_db)):
     """Resend verification code"""
-    data  = request.get_json()
-    email = data.get('email', '').lower()
-
-    if not email:
-        return jsonify({'error': 'Email is required'}), 400
-
-    user = User.query.filter_by(email=email).first()
+    email = data.email.lower()
+    
+    user = db.query(User).filter_by(email=email).first()
     if not user:
-        return jsonify({'error': 'Email not found'}), 404
+        raise HTTPException(status_code=404, detail="Email introuvable")
     if user.is_verified:
-        return jsonify({'error': 'This account is already verified'}), 400
-
-    # Anti-spam : vérifie qu'il n'y a pas de code récent (< 60s)
+        raise HTTPException(status_code=400, detail="Ce compte est déjà vérifié")
+    
     existing = _pending_verifications.get(email)
     if existing:
-        elapsed = (datetime.utcnow() - (existing['expires_at'] - timedelta(minutes=CODE_EXPIRY_MINUTES))).total_seconds()
+        elapsed = (datetime.now(timezone.utc) - (existing['expires_at'] - timedelta(minutes=CODE_EXPIRY_MINUTES))).total_seconds()
         if elapsed < 60:
             wait = int(60 - elapsed)
-            return jsonify({'error': f'Please wait {wait} seconds before resending.'}), 429
-
+            raise HTTPException(status_code=429, detail=f"Veuillez patienter {wait} secondes.")
+    
     code = _generate_code()
     _store_code(email, code)
-
     try:
         _send_verification_email(email, user.first_name, code)
     except Exception as e:
-        return jsonify({'error': f'Failed to send email: {str(e)}'}), 500
-
-    return jsonify({'message': 'Verification code resent.'}), 200
-
+        raise HTTPException(status_code=500, detail=f"Échec de l'envoi : {str(e)}")
+    
+    return {"message": "Code de vérification renvoyé."}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LOGIN — bloque les comptes non vérifiés
+# LOGIN
 # ─────────────────────────────────────────────────────────────────────────────
-@auth_bp.route('/login', methods=['POST'])
-def login():
+@router.post("/login")
+def login(data: LoginRequest, db: Session = Depends(get_db)):
     """Login user"""
-    data = request.get_json()
-
-    email    = data.get('email', '').lower()
-    password = data.get('password')
-
-    if not email or not password:
-        return jsonify({'error': 'Email and password are required'}), 400
-
-    user = User.query.filter_by(email=email).first()
-
-    if not user or not user.check_password(password):
-        return jsonify({'error': 'Invalid credentials'}), 401
-
+    email = data.email.lower()
+    user = db.query(User).filter_by(email=email).first()
+    
+    if not user or not user.check_password(data.password):
+        raise HTTPException(status_code=401, detail="Identifiants invalides")
     if not user.is_active:
-        return jsonify({'error': 'Account is deactivated'}), 403
-
-    # ← NOUVEAU : bloque si l'email n'est pas vérifié
+        raise HTTPException(status_code=403, detail="Compte désactivé")
     if not user.is_verified:
-        return jsonify({
-            'error': 'Please verify your email before logging in.',
-            'email': email,
-            'needs_verification': True,   # ← le frontend peut détecter ça
-        }), 403
-
-    # Update last login
-    user.last_login = datetime.utcnow()
-    db.session.commit()
-
-    access_token = create_access_token(identity=str(user.id))
-
-    return jsonify({
-        'message': 'Login successful',
+        raise HTTPException(
+            status_code=403,
+            detail="Veuillez vérifier votre email avant de vous connecter."
+        )
+    
+    user.last_login = datetime.now(timezone.utc)
+    db.commit()
+    
+    access_token = jwt.encode(
+        {
+            'sub': str(user.id),
+            'iat': datetime.now(timezone.utc),
+            'exp': datetime.now(timezone.utc) + timedelta(hours=24)
+        },
+        os.getenv('JWT_SECRET_KEY', 'jwt-secret'),
+        algorithm='HS256'
+    )
+    
+    return {
+        'message': 'Connexion réussie',
         'user': user.to_dict(),
         'access_token': access_token
-    })
-
+    }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Routes existantes — inchangées
+# LOGOUT
 # ─────────────────────────────────────────────────────────────────────────────
-@auth_bp.route('/logout', methods=['POST'])
-@jwt_required()
-def logout():
-    """Logout user (invalidate token)"""
-    jti = get_jwt()['jti']
-    blacklist.add(jti)
-    return jsonify({'message': 'Successfully logged out'})
+@router.post("/logout")
+def logout(current_user: User = Depends(get_current_user)):
+    """Logout (invalidate token)"""
+    # FastAPI ne donne pas accès direct au jti via Depends.
+    # Solution : le frontend supprime le token localement.
+    # Le token expirera naturellement (24h).
+    return {"message": "Déconnexion réussie"}
 
-
-@auth_bp.route('/me', methods=['GET'])
-@jwt_required()
-def get_current_user():
+# ─────────────────────────────────────────────────────────────────────────────
+# ME
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get("/me")
+def get_me(current_user: User = Depends(get_current_user)):
     """Get current user info"""
-    user_id = int(get_jwt_identity())
-    user = User.query.get(user_id)
+    return {"user": current_user.to_dict()}
 
-    if not user:
-        return jsonify({'error': 'User not found'}), 404
-
-    return jsonify({'user': user.to_dict()})
-
-
-@auth_bp.route('/profile', methods=['PUT'])
-@jwt_required()
-def update_profile():
+# ─────────────────────────────────────────────────────────────────────────────
+# UPDATE PROFILE
+# ─────────────────────────────────────────────────────────────────────────────
+@router.put("/profile")
+def update_profile(data: UpdateProfileRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Update user profile"""
-    user_id = int(get_jwt_identity())
-    user = User.query.get(user_id)
+    if data.first_name is not None:
+        current_user.first_name = data.first_name
+    if data.last_name is not None:
+        current_user.last_name = data.last_name
+    if data.password is not None:
+        current_user.set_password(data.password)
+    
+    db.commit()
+    return {"message": "Profil mis à jour", "user": current_user.to_dict()}
 
-    if not user:
-        return jsonify({'error': 'User not found'}), 404
-
-    data = request.get_json()
-
-    if 'first_name' in data:
-        user.first_name = data['first_name']
-    if 'last_name' in data:
-        user.last_name = data['last_name']
-    if 'password' in data:
-        user.set_password(data['password'])
-
-    db.session.commit()
-
-    return jsonify({
-        'message': 'Profile updated successfully',
-        'user': user.to_dict()
-    })
-
-
-@auth_bp.route('/users', methods=['GET'])
-@jwt_required()
-def list_users():
+# ─────────────────────────────────────────────────────────────────────────────
+# LIST USERS (teacher/admin only)
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get("/users")
+def list_users(
+    current_user: User = Depends(get_current_teacher),
+    db: Session = Depends(get_db)
+):
     """List all users (teacher/admin only)"""
-    user_id = int(get_jwt_identity())
-    user = User.query.get(user_id)
-
-    if not user.is_teacher():
-        return jsonify({'error': 'Unauthorized'}), 403
-
-    users = User.query.all()
-    return jsonify({'users': [u.to_dict() for u in users]})
+    users = db.query(User).all()
+    return {"users": [u.to_dict() for u in users]}

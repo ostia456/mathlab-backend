@@ -1,32 +1,38 @@
 """
 User Progress Model
 """
-from app import db
-from datetime import datetime
+from datetime import datetime, timezone
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON
+from sqlalchemy.orm import relationship
+from app.models import Base
 
-class UserProgress(db.Model):
+
+class UserProgress(Base):
     __tablename__ = 'user_progress'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    module = db.Column(db.String(50), nullable=False)  # dynamical_systems, numerical_methods, etc.
-    
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    module = Column(String(50), nullable=False)
+
     # Progress metrics
-    exercises_completed = db.Column(db.Integer, default=0)
-    exercises_attempted = db.Column(db.Integer, default=0)
-    total_points = db.Column(db.Integer, default=0)
-    time_spent = db.Column(db.Integer, default=0)  # in seconds
-    
+    exercises_completed = Column(Integer, default=0)
+    exercises_attempted = Column(Integer, default=0)
+    total_points = Column(Integer, default=0)
+    time_spent = Column(Integer, default=0)
+
     # Skill levels (adaptive difficulty)
-    current_difficulty = db.Column(db.Integer, default=1)  # 1-5
-    success_rate = db.Column(db.Float, default=0.0)  # 0-100
-    
+    current_difficulty = Column(Integer, default=1)
+    success_rate = Column(Float, default=0.0)
+
     # Detailed progress by topic
-    topic_progress = db.Column(db.JSON, default=dict)  # {topic: {completed: n, total: m}}
-    
-    last_activity = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+    topic_progress = Column(JSON, default=dict)
+
+    last_activity = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # Relationship
+    user = relationship('User', back_populates='progress')
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -42,11 +48,11 @@ class UserProgress(db.Model):
             'last_activity': self.last_activity.isoformat() if self.last_activity else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
-    
+
     def update_success_rate(self):
         if self.exercises_attempted > 0:
             self.success_rate = (self.exercises_completed / self.exercises_attempted) * 100
-            
+
     def adjust_difficulty(self):
         """Adjust difficulty based on success rate"""
         if self.success_rate >= 80 and self.current_difficulty < 5:
