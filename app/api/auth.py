@@ -5,11 +5,7 @@ import os
 import requests
 import random
 import string
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta, timezone
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr, Field
@@ -144,7 +140,7 @@ def _send_verification_email(to_email: str, first_name: str, code: str):
     """Envoie email via Brevo HTTP API"""
 
     api_key = os.getenv("BREVO_API_KEY")
-
+    print(f"[DEBUG] BREVO_API_KEY starts with: {api_key[:10]}... (length: {len(api_key)})")
     if not api_key:
         print(f"\n{'='*50}")
         print(f"[DEV MODE] Verification code for {to_email}: {code}")
