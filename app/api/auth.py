@@ -137,49 +137,44 @@ def _validate_code(email: str, code: str) -> tuple:
     return True, ""
 
 def _send_verification_email(to_email: str, first_name: str, code: str):
-    """Envoie le code par email via Mailgun API."""
-    api_key = os.getenv('MAILGUN_API_KEY', '')
-    domain = os.getenv('MAILGUN_DOMAIN', '')
+    """Envoie par SendGrid."""
+    api_key = os.getenv('SENDGRID_API_KEY', '')
 
-    if not api_key or not domain:
-        print(f"\n{'='*40}")
-        print(f"[DEV] Code de vérification pour {to_email} : {code}")
-        print(f"{'='*40}\n")
+    if not api_key:
+        print(f"[DEV] Code: {code}")
         return
 
     html_body = f"""
     <div style="font-family: Arial, sans-serif; max-width: 500px; margin: auto; padding: 30px;">
         <h1 style="color: #1a1a2e;">MathLab University</h1>
         <p>Bonjour <strong>{first_name}</strong>,</p>
-        <p>Voici votre code de vérification :</p>
-        <div style="font-size: 36px; font-weight: bold; letter-spacing: 10px; color: #2563eb; margin: 30px 0;">
-            {code}
-        </div>
-        <p>Ce code expire dans 15 minutes.</p>
-        <hr>
-        <p style="font-size: 12px; color: gray;">Si vous n'êtes pas à l'origine de cette inscription, ignorez cet email.</p>
+        <p>Code :</p>
+        <div style="font-size: 36px; font-weight: bold; letter-spacing: 10px; color: #2563eb;">{code}</div>
+        <p>Expire dans 15 min.</p>
     </div>
     """
 
     try:
         response = requests.post(
-            f"https://api.mailgun.net/v3/{domain}/messages",
-            auth=("api", api_key),
-            data={
-                "from": f"MathLab University <noreply@{domain}>",
-                "to": [to_email],
-                "subject": "MathLab University — Vérification de votre adresse email",
-                "html": html_body
+            "https://api.sendgrid.com/v3/mail/send",
+            json={
+                "personalizations": [{"to": [{"email": to_email}]}],
+                "from": {"email": "mathlabuniversity@gmail.com", "name": "MathLab University"},
+                "subject": "Code de vérification MathLab",
+                "content": [{"type": "text/html", "value": html_body}]
+            },
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
             }
         )
-        if response.status_code == 200:
+        if response.status_code == 202:
             print(f"[INFO] Email envoyé à {to_email}")
         else:
-            print(f"[MAILGUN ERROR] {response.status_code}: {response.text}")
-            raise Exception(f"Mailgun failed: {response.text}")
+            print(f"[ERROR] {response.text}")
     except Exception as e:
-        print(f"[WARN] Email send failed: {e}")
-        print(f"[DEV] Code de vérification pour {to_email} : {code}")
+        print(f"[WARN] {e}")
+        print(f"[DEV] Code: {code}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # REGISTER
