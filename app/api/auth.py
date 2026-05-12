@@ -137,76 +137,49 @@ def _validate_code(email: str, code: str) -> tuple:
     return True, ""
 
 def _send_verification_email(to_email: str, first_name: str, code: str):
-    """Envoie email via Brevo HTTP API"""
+    """Envoie le code par email via Mailgun API."""
+    api_key = os.getenv('MAILGUN_API_KEY', '')
+    domain = os.getenv('MAILGUN_DOMAIN', '')
 
-    api_key = os.getenv("BREVO_API_KEY")
-    print(f"[DEBUG] BREVO_API_KEY starts with: {api_key[:10]}... (length: {len(api_key)})")
-    if not api_key:
-        print(f"\n{'='*50}")
-        print(f"[DEV MODE] Verification code for {to_email}: {code}")
-        print(f"{'='*50}\n")
+    if not api_key or not domain:
+        print(f"\n{'='*40}")
+        print(f"[DEV] Code de vérification pour {to_email} : {code}")
+        print(f"{'='*40}\n")
         return
 
     html_body = f"""
     <div style="font-family: Arial, sans-serif; max-width: 500px; margin: auto; padding: 30px;">
         <h1 style="color: #1a1a2e;">MathLab University</h1>
-
         <p>Bonjour <strong>{first_name}</strong>,</p>
-
         <p>Voici votre code de vérification :</p>
-
-        <div style="
-            font-size: 36px;
-            font-weight: bold;
-            letter-spacing: 10px;
-            color: #2563eb;
-            margin: 30px 0;
-        ">
+        <div style="font-size: 36px; font-weight: bold; letter-spacing: 10px; color: #2563eb; margin: 30px 0;">
             {code}
         </div>
-
         <p>Ce code expire dans 15 minutes.</p>
-
         <hr>
-
-        <p style="font-size: 12px; color: gray;">
-            Si vous n'êtes pas à l'origine de cette inscription,
-            ignorez simplement cet email.
-        </p>
+        <p style="font-size: 12px; color: gray;">Si vous n'êtes pas à l'origine de cette inscription, ignorez cet email.</p>
     </div>
     """
 
-    payload = {
-        "sender": {
-            "name": "MathLab University",
-            "email": "mathlabuniversity@gmail.com"
-        },
-        "to": [
-            {
-                "email": to_email
+    try:
+        response = requests.post(
+            f"https://api.mailgun.net/v3/{domain}/messages",
+            auth=("api", api_key),
+            data={
+                "from": f"MathLab University <noreply@{domain}>",
+                "to": [to_email],
+                "subject": "MathLab University — Vérification de votre adresse email",
+                "html": html_body
             }
-        ],
-        "subject": "Code de vérification MathLab University",
-        "htmlContent": html_body
-    }
-
-    headers = {
-        "accept": "application/json",
-        "api-key": api_key,
-        "content-type": "application/json"
-    }
-
-    response = requests.post(
-        "https://api.brevo.com/v3/smtp/email",
-        json=payload,
-        headers=headers
-    )
-
-    if response.status_code not in [200, 201]:
-        print("[BREVO ERROR]", response.text)
-        raise Exception(f"Brevo failed: {response.text}")
-
-    print(f"[INFO] Email envoyé à {to_email}")
+        )
+        if response.status_code == 200:
+            print(f"[INFO] Email envoyé à {to_email}")
+        else:
+            print(f"[MAILGUN ERROR] {response.status_code}: {response.text}")
+            raise Exception(f"Mailgun failed: {response.text}")
+    except Exception as e:
+        print(f"[WARN] Email send failed: {e}")
+        print(f"[DEV] Code de vérification pour {to_email} : {code}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # REGISTER
