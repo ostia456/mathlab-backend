@@ -2,8 +2,8 @@
 Authentication API Routes - FastAPI
 """
 import os
-import brevo_python
-from brevo_python.rest import ApiException
+import sib_api_v3_sdk
+from sib_api_v3_sdk.rest import ApiException
 import random
 import string
 import smtplib
