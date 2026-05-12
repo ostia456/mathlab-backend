@@ -2,7 +2,8 @@
 Authentication API Routes - FastAPI
 """
 import os
-import resend
+import sib_api_v3_sdk
+from sib_api_v3_sdk.rest import ApiException
 import random
 import string
 import smtplib
@@ -140,84 +141,55 @@ def _validate_code(email: str, code: str) -> tuple:
     _pending_verifications.pop(email, None)
     return True, ""
 
-def _send_verification_email(to_email: str, first_name: str, code: str):
-    """Envoie le code par email via Resend API."""
-    resend_api_key = os.getenv('RESEND_API_KEY', '')
+import os
+import sib_api_v3_sdk
+from sib_api_v3_sdk.rest import ApiException
 
-    if not resend_api_key:
-        # Mode développement : affiche le code dans la console
+def _send_verification_email(to_email: str, first_name: str, code: str):
+    """Envoie le code par email via Brevo API."""
+    api_key = os.getenv('BREVO_API_KEY', '')
+
+    if not api_key:
         print(f"\n{'='*40}")
         print(f"[DEV] Code de vérification pour {to_email} : {code}")
         print(f"{'='*40}\n")
         return
 
-    resend.api_key = resend_api_key
-
-    subject = "MathLab University — Vérification de votre adresse email"
+    configuration = sib_api_v3_sdk.Configuration()
+    configuration.api_key['api-key'] = api_key
 
     html_body = f"""
     <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
       <div style="text-align: center; margin-bottom: 32px;">
         <h1 style="color: #1a1a2e; font-size: 24px; margin: 0;">MathLab University</h1>
-        <p style="color: #666; font-size: 14px; margin-top: 4px;">
-          Département de Mathématiques-Informatique — UNSTIM
-        </p>
+        <p style="color: #666; font-size: 14px; margin-top: 4px;">Département de Mathématiques-Informatique — UNSTIM</p>
       </div>
-
       <div style="background: #f8f9ff; border-radius: 12px; padding: 32px; text-align: center;">
         <p style="color: #333; font-size: 16px;">Bonjour <strong>{first_name}</strong>,</p>
-        <p style="color: #555; font-size: 14px; line-height: 1.6;">
-          Merci de vous être inscrit sur MathLab University.<br/>
-          Voici votre code de vérification :
-        </p>
-
-        <div style="
-          display: inline-block;
-          background: #ffffff;
-          border: 2px solid #e2e8f0;
-          border-radius: 12px;
-          padding: 16px 32px;
-          margin: 20px 0;
-        ">
-          <span style="
-            font-family: 'Courier New', monospace;
-            font-size: 36px;
-            font-weight: bold;
-            letter-spacing: 12px;
-            color: #1a1a2e;
-          ">{code}</span>
+        <p style="color: #555; font-size: 14px; line-height: 1.6;">Merci de vous être inscrit sur MathLab University.<br/>Voici votre code de vérification :</p>
+        <div style="display: inline-block; background: #ffffff; border: 2px solid #e2e8f0; border-radius: 12px; padding: 16px 32px; margin: 20px 0;">
+          <span style="font-family: 'Courier New', monospace; font-size: 36px; font-weight: bold; letter-spacing: 12px; color: #1a1a2e;">{code}</span>
         </div>
-
-        <p style="color: #888; font-size: 13px;">
-          Ce code est valable <strong>{CODE_EXPIRY_MINUTES} minutes</strong>.
-        </p>
+        <p style="color: #888; font-size: 13px;">Ce code est valable <strong>15 minutes</strong>.</p>
       </div>
-
-      <div style="
-        margin-top: 24px; padding: 16px;
-        background: #fff3cd; border-radius: 8px;
-        border-left: 4px solid #ffc107;
-      ">
-        <p style="color: #856404; font-size: 13px; margin: 0;">
-          ⚠️ Si vous n'êtes pas à l'origine de cette inscription, ignorez cet email.
-        </p>
+      <div style="margin-top: 24px; padding: 16px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
+        <p style="color: #856404; font-size: 13px; margin: 0;">⚠️ Si vous n'êtes pas à l'origine de cette inscription, ignorez cet email.</p>
       </div>
-
-      <p style="color: #aaa; font-size: 12px; text-align: center; margin-top: 32px;">
-        © MathLab University — UNSTIM
-      </p>
+      <p style="color: #aaa; font-size: 12px; text-align: center; margin-top: 32px;">© MathLab University — UNSTIM</p>
     </div>
     """
 
     try:
-        resend.Emails.send({
-            "from": "MathLab University <onboarding@resend.dev>",
-            "to": [to_email],
-            "subject": subject,
-            "html": html_body,
-        })
+        api_instance = sib_api_v3_sdk.TransactionalEmailsApi()
+        send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
+            sender={"name": "MathLab University", "email": "mathlabuniversity@gmail.com"},
+            to=[{"email": to_email}],
+            subject="MathLab University — Vérification de votre adresse email",
+            html_content=html_body,
+        )
+        api_instance.send_transac_email(send_smtp_email)
         print(f"[INFO] Email envoyé à {to_email}")
-    except Exception as e:
+    except ApiException as e:
         print(f"[WARN] Email send failed: {e}")
         print(f"[DEV] Code de vérification pour {to_email} : {code}")
 
