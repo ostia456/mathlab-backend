@@ -2,9 +2,9 @@
 Authentication API Routes - FastAPI
 """
 import os
+import requests
 import random
 import string
-import requests
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -140,7 +140,6 @@ def _validate_code(email: str, code: str) -> tuple:
     _pending_verifications.pop(email, None)
     return True, ""
 
-
 def _send_verification_email(to_email: str, first_name: str, code: str):
     """Envoie email via Brevo HTTP API"""
 
@@ -184,7 +183,7 @@ def _send_verification_email(to_email: str, first_name: str, code: str):
     payload = {
         "sender": {
             "name": "MathLab University",
-            "email": "tonemail@gmail.com"
+            "email": "mathlabuniversity@gmail.com"
         },
         "to": [
             {
@@ -212,6 +211,7 @@ def _send_verification_email(to_email: str, first_name: str, code: str):
         raise Exception(f"Brevo failed: {response.text}")
 
     print(f"[INFO] Email envoyé à {to_email}")
+
 # ─────────────────────────────────────────────────────────────────────────────
 # REGISTER
 # ─────────────────────────────────────────────────────────────────────────────

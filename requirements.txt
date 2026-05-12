@@ -15,5 +15,5 @@ scipy==1.14.1
 matplotlib==3.9.3
 email-validator==2.2.0
 passlib
-requests
+requests==2.32.3
 python-multipart
