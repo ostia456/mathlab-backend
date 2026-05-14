@@ -11,7 +11,7 @@ from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
-
+import secrets as secrets_module
 from app import SessionLocal
 from app.models.user import User
 
@@ -32,7 +32,9 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=Fals
 _pending_verifications: dict = {}
 CODE_EXPIRY_MINUTES = 15
 MAX_ATTEMPTS = 5
-
+# Stockage temporaire des tokens de réinitialisation
+_reset_tokens: dict = {}
+RESET_TOKEN_EXPIRY_MINUTES = 30
 # ─────────────────────────────────────────────────────────────────────────────
 # Schémas Pydantic (validation automatique)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -349,6 +351,112 @@ def list_users(
     current_user: User = Depends(get_current_teacher),
     db: Session = Depends(get_db)
 ):
+    
     """List all users (teacher/admin only)"""
     users = db.query(User).all()
     return {"users": [u.to_dict() for u in users]}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FORGOT PASSWORD — Envoie un lien de réinitialisation
+# ─────────────────────────────────────────────────────────────────────────────
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+@router.post("/forgot-password")
+def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """Envoie un lien de réinitialisation par email."""
+    email = data.email.lower()
+    user = db.query(User).filter_by(email=email).first()
+
+    # Toujours répondre OK pour ne pas révéler si l'email existe
+    if not user:
+        return {"message": "Si un compte existe, un email a été envoyé."}
+
+    # Génère un token unique
+    token = secrets_module.token_urlsafe(32)
+    _reset_tokens[email] = {
+        'token': token,
+        'expires_at': datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_EXPIRY_MINUTES),
+    }
+
+    # Lien de réinitialisation
+    reset_link = f"https://mathlabuniversity.vercel.app/reset-password?token={token}&email={email}"
+
+    # Envoie l'email
+    html_body = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 500px; margin: auto; padding: 30px;">
+        <h1 style="color: #1a1a2e;">MathLab University</h1>
+        <p>Bonjour <strong>{user.first_name}</strong>,</p>
+        <p>Vous avez demandé la réinitialisation de votre mot de passe.</p>
+        <p>Cliquez sur le bouton ci-dessous pour créer un nouveau mot de passe :</p>
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{reset_link}"
+               style="background-color: #2563eb; color: white; padding: 14px 28px;
+                      text-decoration: none; border-radius: 8px; font-weight: bold;
+                      display: inline-block;">
+                Réinitialiser mon mot de passe
+            </a>
+        </div>
+        <p style="font-size: 12px; color: gray;">
+            Ce lien est valable {RESET_TOKEN_EXPIRY_MINUTES} minutes.<br/>
+            Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.
+        </p>
+    </div>
+    """
+
+    try:
+        _send_verification_email(email, user.first_name, code="")
+        # On utilise la même fonction mais on remplace le contenu
+        api_key = os.getenv('SENDGRID_API_KEY', '')
+        if api_key:
+            requests.post(
+                "https://api.sendgrid.com/v3/mail/send",
+                json={
+                    "personalizations": [{"to": [{"email": email}]}],
+                    "from": {"email": "mathlabuniversity@gmail.com", "name": "MathLab University"},
+                    "subject": "MathLab University - Réinitialisation du mot de passe",
+                    "content": [{"type": "text/html", "value": html_body}]
+                },
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            )
+    except Exception as e:
+        print(f"[WARN] Reset password email failed: {e}")
+
+    return {"message": "Si un compte existe, un email a été envoyé."}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RESET PASSWORD — Change le mot de passe avec le token
+# ─────────────────────────────────────────────────────────────────────────────
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    token: str
+    new_password: str = Field(..., min_length=6)
+
+@router.post("/reset-password")
+def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """Réinitialise le mot de passe avec le token reçu par email."""
+    email = data.email.lower()
+
+    # Vérifie le token
+    record = _reset_tokens.get(email)
+    if not record:
+        raise HTTPException(status_code=400, detail="Aucune demande de réinitialisation trouvée.")
+    if datetime.now(timezone.utc) > record['expires_at']:
+        _reset_tokens.pop(email, None)
+        raise HTTPException(status_code=400, detail="Le lien a expiré. Faites une nouvelle demande.")
+    if record['token'] != data.token:
+        raise HTTPException(status_code=400, detail="Token invalide.")
+
+    # Change le mot de passe
+    user = db.query(User).filter_by(email=email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable.")
+
+    user.set_password(data.new_password)
+    db.commit()
+
+    # Supprime le token
+    _reset_tokens.pop(email, None)
+
+    return {"message": "Mot de passe réinitialisé avec succès. Vous pouvez vous connecter."}
