@@ -368,7 +368,6 @@ def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
     email = data.email.lower()
     user = db.query(User).filter_by(email=email).first()
 
-    # Toujours répondre OK pour ne pas révéler si l'email existe
     if not user:
         return {"message": "Si un compte existe, un email a été envoyé."}
 
@@ -382,49 +381,54 @@ def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
     # Lien de réinitialisation
     reset_link = f"https://mathlabuniversity.vercel.app/reset-password?token={token}&email={email}"
 
-    # Envoie l'email
+    # Contenu de l'email
     html_body = f"""
     <div style="font-family: Arial, sans-serif; max-width: 500px; margin: auto; padding: 30px;">
         <h1 style="color: #1a1a2e;">MathLab University</h1>
         <p>Bonjour <strong>{user.first_name}</strong>,</p>
         <p>Vous avez demandé la réinitialisation de votre mot de passe.</p>
-        <p>Cliquez sur le bouton ci-dessous pour créer un nouveau mot de passe :</p>
+        <p>Cliquez sur le bouton ci-dessous :</p>
         <div style="text-align: center; margin: 30px 0;">
             <a href="{reset_link}"
                style="background-color: #2563eb; color: white; padding: 14px 28px;
-                      text-decoration: none; border-radius: 8px; font-weight: bold;
-                      display: inline-block;">
+                      text-decoration: none; border-radius: 8px; font-weight: bold;">
                 Réinitialiser mon mot de passe
             </a>
         </div>
         <p style="font-size: 12px; color: gray;">
-            Ce lien est valable {RESET_TOKEN_EXPIRY_MINUTES} minutes.<br/>
-            Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.
+            Ce lien est valable {RESET_TOKEN_EXPIRY_MINUTES} minutes.
         </p>
     </div>
     """
 
+    # Envoie l'email via SendGrid
+    api_key = os.getenv('SENDGRID_API_KEY', '')
+    if not api_key:
+        print(f"[DEV] Reset link for {email}: {reset_link}")
+        return {"message": "Si un compte existe, un email a été envoyé."}
+
     try:
-        _send_verification_email(email, user.first_name, code="")
-        # On utilise la même fonction mais on remplace le contenu
-        api_key = os.getenv('SENDGRID_API_KEY', '')
-        if api_key:
-            requests.post(
-                "https://api.sendgrid.com/v3/mail/send",
-                json={
-                    "personalizations": [{"to": [{"email": email}]}],
-                    "from": {"email": "mathlabuniversity@gmail.com", "name": "MathLab University"},
-                    "subject": "MathLab University - Réinitialisation du mot de passe",
-                    "content": [{"type": "text/html", "value": html_body}]
-                },
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-            )
+        response = requests.post(
+            "https://api.sendgrid.com/v3/mail/send",
+            json={
+                "personalizations": [{"to": [{"email": email}]}],
+                "from": {"email": "mathlabuniversity@gmail.com", "name": "MathLab University"},
+                "subject": "MathLab University - Réinitialisation du mot de passe",
+                "content": [{"type": "text/html", "value": html_body}]
+            },
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+        )
+        if response.status_code in [200, 202]:
+            print(f"[INFO] Reset email envoyé à {email}")
+        else:
+            print(f"[ERROR] SendGrid: {response.text}")
     except Exception as e:
-        print(f"[WARN] Reset password email failed: {e}")
+        print(f"[WARN] Reset email failed: {e}")
 
     return {"message": "Si un compte existe, un email a été envoyé."}
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # RESET PASSWORD — Change le mot de passe avec le token
 # ─────────────────────────────────────────────────────────────────────────────
