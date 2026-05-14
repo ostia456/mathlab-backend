@@ -160,7 +160,7 @@ def _send_verification_email(to_email: str, first_name: str, code: str):
             json={
                 "personalizations": [{"to": [{"email": to_email}]}],
                 "from": {"email": "mathlabuniversity@gmail.com", "name": "MathLab University"},
-                "subject": "Code de vérification MathLab",
+                "subject": "MathLab University - Votre code de vérification",
                 "content": [{"type": "text/html", "value": html_body}]
             },
             headers={
