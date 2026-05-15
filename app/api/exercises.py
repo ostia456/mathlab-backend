@@ -602,7 +602,7 @@ def generate_graph_exercise(difficulty, preferred_type=None):
         return {
             'num_nodes': n,
             'edges': edges,
-            'start': start
+            'start': start,       
             'end': end,
             'question': f'Déterminer le plus court chemin de {start} à {end} par Dijkstra',
             'answer': answer,
