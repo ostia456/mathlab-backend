@@ -7,6 +7,7 @@ import random
 import string
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
@@ -139,20 +140,39 @@ def _validate_code(email: str, code: str) -> tuple:
     return True, ""
 
 def _send_verification_email(to_email: str, first_name: str, code: str):
-    """Envoie par SendGrid."""
+    """Envoie par SendGrid avec lien de vérification."""
     api_key = os.getenv('SENDGRID_API_KEY', '')
 
     if not api_key:
         print(f"[DEV] Code: {code}")
         return
 
+    # Lien de vérification direct
+    verify_link = f"https://mathlab-backend.onrender.com/api/auth/verify-email/{to_email}-{code}"
+
     html_body = f"""
     <div style="font-family: Arial, sans-serif; max-width: 500px; margin: auto; padding: 30px;">
         <h1 style="color: #1a1a2e;">MathLab University</h1>
         <p>Bonjour <strong>{first_name}</strong>,</p>
-        <p>Code :</p>
-        <div style="font-size: 36px; font-weight: bold; letter-spacing: 10px; color: #2563eb;">{code}</div>
-        <p>Expire dans 15 min.</p>
+        <p>Merci de vous être inscrit sur MathLab University.</p>
+        <p>Cliquez sur le bouton ci-dessous pour <strong>activer votre compte</strong> :</p>
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{verify_link}"
+               style="background-color: #2563eb; color: white; padding: 14px 28px;
+                      text-decoration: none; border-radius: 8px; font-weight: bold;
+                      font-size: 16px;">
+                ✅ Activer mon compte
+            </a>
+        </div>
+        <p style="font-size: 13px; color: gray;">
+            Ou copiez ce lien dans votre navigateur :<br/>
+            <a href="{verify_link}">{verify_link}</a>
+        </p>
+        <div style="margin-top: 24px; padding: 16px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
+            <p style="color: #856404; font-size: 13px; margin: 0;">
+                📧 <strong>Vous ne trouvez pas cet email ? Vérifiez vos spams (courrier indésirable).</strong>
+            </p>
+        </div>
     </div>
     """
 
@@ -162,7 +182,7 @@ def _send_verification_email(to_email: str, first_name: str, code: str):
             json={
                 "personalizations": [{"to": [{"email": to_email}]}],
                 "from": {"email": "mathlabuniversity@gmail.com", "name": "MathLab University"},
-                "subject": "MathLab University - Votre code de vérification",
+                "subject": "MathLab University - Activez votre compte",
                 "content": [{"type": "text/html", "value": html_body}]
             },
             headers={
@@ -221,6 +241,34 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
 # ─────────────────────────────────────────────────────────────────────────────
 # VERIFY EMAIL
 # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# VERIFY EMAIL VIA LINK — Activation par clic dans l'email
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get("/verify-email/{token}")
+def verify_email_link(token: str, db: Session = Depends(get_db)):
+    """Active le compte en cliquant sur le lien reçu par email."""
+    # Le token contient l'email et le code séparés par un tiret
+    try:
+        email, code = token.rsplit('-', 1)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Lien invalide.")
+    
+    ok, error_msg = _validate_code(email, code)
+    if not ok:
+        raise HTTPException(status_code=400, detail=error_msg)
+    
+    user = db.query(User).filter_by(email=email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable.")
+    
+    user.is_verified = True
+    db.commit()
+    
+    # Redirige vers la page de connexion avec un message de succès
+    return RedirectResponse(
+        url="https://mathlabuniversity.vercel.app/login?verified=true",
+        status_code=302
+    )
 @router.post("/verify-email")
 def verify_email(data: VerifyEmailRequest, db: Session = Depends(get_db)):
     """Verify email with 6-digit code"""
