@@ -1,11 +1,14 @@
 """
 Exercises API Routes - FastAPI
-Génération procédurale d'exercices et correction automatique
+Génération procédurale d'exercices avec LaTeX et étapes de résolution
 """
 import random
 import heapq
 import numpy as np
-from sympy import symbols, integrate, latex, sympify
+from sympy import (
+    symbols, integrate, latex, sympify, exp, sin, cos,
+    Rational, Function, Matrix, factorial, pretty, limit, oo
+)
 from typing import Optional, List, Union, Any
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException
@@ -45,65 +48,121 @@ def get_db():
         db.close()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Générateurs d'exercices (inchangés)
+# Générateurs d'exercices avec LaTeX et étapes
 # ─────────────────────────────────────────────────────────────────────────────
+
 def generate_numerical_integration_exercise(difficulty):
+    """Intégration numérique avec formules et étapes."""
     x = symbols('x')
     if difficulty == 1:
         coeffs = [random.randint(1, 5) for _ in range(2)]
         f = sum(c * x**i for i, c in enumerate(coeffs))
+        method = random.choice(['Trapèzes', 'Rectangle gauche'])
     elif difficulty == 2:
         coeffs = [random.randint(1, 5) for _ in range(3)]
         f = sum(c * x**i for i, c in enumerate(coeffs))
+        method = random.choice(['Simpson', 'Trapèzes'])
     elif difficulty == 3:
         coeffs = [random.randint(-5, 5) for _ in range(4)]
         f = sum(c * x**i for i, c in enumerate(coeffs))
+        method = 'Simpson'
     else:
         a_coef, b_coef = random.randint(1, 3), random.randint(1, 3)
-        f = a_coef * x**2 + b_coef * sympify('sin(x)')
+        f = a_coef * x**2 + b_coef * sin(x)
+        method = 'Simpson'
     
     a, b = 0, random.randint(1, 5)
     exact = integrate(f, (x, a, b))
     exact_val = float(exact.evalf())
-    
+    n = 4 * difficulty
+    h = (b - a) / n
+
+    # Étapes de résolution
+    steps = [
+        f'Fonction : $f(x) = {latex(f)}$',
+        f'Intervalle : $[{a}, {b}]$',
+        f'Nombre de sous-intervalles : $n = {n}$',
+        f'Pas : $h = \\frac{{{b}-{a}}}{{{n}}} = {latex(Rational(b-a, n))}$',
+        f'Valeur exacte : $\\int_{{{a}}}^{{{b}}} f(x)\\,dx = {latex(exact)} \\approx {exact_val:.4f}$',
+    ]
+
     return {
         'function': str(f),
         'a': a, 'b': b,
         'exact_value': exact_val,
-        'question': f"Calculer l'intégrale ∫[{a},{b}] f(x) dx (valeur numérique)",
+        'question': f"Calculer l'intégrale $\\int_{{{a}}}^{{{b}}} f(x)\\,dx$ par la méthode de {method} avec $n={n}$",
         'answer': exact_val,
-        'latex': latex(f)
+        'method': method,
+        'n': n,
+        'h': float(h),
+        'solution_latex': f'\\int_{{{a}}}^{{{b}}} {latex(f)}\\,dx = {latex(exact)} \\approx {exact_val:.4f}',
+        'steps': steps,
     }
 
+
 def generate_matrix_exercise(difficulty):
+    """Matrices : déterminant et inverse avec étapes en LaTeX."""
     size = 2 if difficulty <= 2 else 3
     A = np.random.randint(-5, 6, (size, size))
     while abs(np.linalg.det(A)) < 0.1:
         A = np.random.randint(-5, 6, (size, size))
     
     operation = random.choice(['determinant', 'inverse'])
-    answer = float(np.linalg.det(A)) if operation == 'determinant' else np.linalg.inv(A).tolist()
-    
+    sympy_A = Matrix(A.tolist())
+    det_A = sympy_A.det()
+    steps = []
+    solution_latex = ""
+
+    if operation == 'determinant':
+        answer = float(det_A)
+        if size == 2:
+            steps = [
+                f'Matrice : $A = {latex(sympy_A)}$',
+                f'Déterminant : $\\det(A) = ({A[0,0]})({A[1,1]}) - ({A[0,1]})({A[1,0]})$',
+                f'$\\det(A) = {A[0,0]*A[1,1]} - {A[0,1]*A[1,0]} = {answer}$',
+            ]
+        else:
+            steps = [
+                f'Matrice : $A = {latex(sympy_A)}$',
+                f'Déterminant (Sarrus) : $\\det(A) = {latex(det_A)}$',
+                f'$\\det(A) = {answer}$',
+            ]
+        solution_latex = f'\\det(A) = {latex(det_A)} = {answer}'
+    else:
+        inv_A = sympy_A.inv()
+        answer = inv_A.tolist()
+        det_val = float(det_A)
+        adj_A = sympy_A.adjugate()
+        steps = [
+            f'Matrice : $A = {latex(sympy_A)}$',
+            f'Déterminant : $\\det(A) = {latex(det_A)} = {det_val:.4f}$',
+            f'Comatrice (transposée de la matrice des cofacteurs) : $\\operatorname{{adj}}(A) = {latex(adj_A)}$',
+            f'Inverse : $A^{{-1}} = \\frac{{1}}{{\\det(A)}} \\operatorname{{adj}}(A) = \\frac{{1}}{{{latex(det_A)}}} {latex(adj_A)}$',
+            f'$A^{{-1}} = {latex(inv_A)}$',
+        ]
+        solution_latex = f'A^{{-1}} = \\frac{{1}}{{{latex(det_A)}}} {latex(adj_A)} = {latex(inv_A)}'
+
     return {
         'matrix': A.tolist(),
         'operation': operation,
         'answer': answer,
-        'size': size
+        'size': size,
+        'question': f'Calculer le {operation} de la matrice $A$' if operation == 'determinant' else f'Calculer l\'inverse de la matrice $A$',
+        'solution_latex': solution_latex,
+        'steps': steps,
     }
 
+
 def generate_ode_exercise(difficulty):
-    """Generate ODE exercise with exact values and LaTeX."""
-    from sympy import symbols, exp, sin, cos, Rational, latex, lambdify, dsolve, Eq, Function, Derivative
-    
+    """ODE avec valeurs exactes, LaTeX et étapes."""
     t = symbols('t')
     y = Function('y')
     
     if difficulty <= 2:
         a = random.randint(1, 5)
         y0 = random.randint(1, 5)
-        t_eval = Rational(1, 1)  # t = 1
+        t_eval = Rational(1, 1)
         
-        # Solution exacte : y = y0 * exp(-a*t)
         exact_expr = y0 * exp(-a * t_eval)
         exact_val = float(exact_expr.evalf())
         
@@ -115,13 +174,14 @@ def generate_ode_exercise(difficulty):
             't_eval': float(t_eval),
             'question': f'Calculer $y({float(t_eval)})$',
             'answer': exact_val,
-            'solution_latex': f'y(t) = {y0}e^{{-{a}t}} \\\\ y({float(t_eval)}) = {y0}e^{{-{a}}} = {latex(exact_expr)} \\approx {exact_val:.4f}',
+            'solution_latex': f'y(t) = {y0}e^{{-{a}t}} \\Rightarrow y({float(t_eval)}) = {y0}e^{{-{a}}} = {latex(exact_expr)} \\approx {exact_val:.4f}',
             'steps': [
-                f'Équation différentielle : $\\frac{{dy}}{{dt}} = -{a}y$',
+                f'Équation : $\\frac{{dy}}{{dt}} = -{a}y$',
+                f'Séparable : $\\frac{{dy}}{{y}} = -{a}\\,dt$',
                 f'Solution générale : $y(t) = Ce^{{-{a}t}}$',
-                f'Avec $y(0) = {y0}$ : $C = {y0}$',
-                f'Solution particulière : $y(t) = {y0}e^{{-{a}t}}$',
-                f'En $t = {float(t_eval)}$ : $y({float(t_eval)}) = {y0}e^{{-{a}}} = {latex(exact_expr)} \\approx {exact_val:.4f}$',
+                f'Condition $y(0) = {y0} \\Rightarrow C = {y0}$',
+                f'Solution : $y(t) = {y0}e^{{-{a}t}}$',
+                f'$y({float(t_eval)}) = {y0}e^{{-{a}}} = {latex(exact_expr)} \\approx {exact_val:.4f}$',
             ],
         }
     else:
@@ -144,13 +204,16 @@ def generate_ode_exercise(difficulty):
             'solution_latex': f'y(t) = {latex(exact_expr)} \\approx {exact_val:.4f}',
             'steps': [
                 f'Équation : $\\frac{{dy}}{{dt}} + {a}y = \\sin(t)$',
-                'Solution par facteur intégrant $\\mu(t) = e^{' + str(a) + 't}$',
+                f'Facteur intégrant : $\\mu(t) = e^{{\\int {a}\\,dt}} = e^{{{a}t}}$',
+                f'Multiplication : $\\frac{{d}}{{dt}}\\left[e^{{{a}t}} y\\right] = e^{{{a}t}}\\sin(t)$',
                 f'Solution : $y(t) = {latex(exact_expr)}$',
                 f'$y({float(t_eval)}) \\approx {exact_val:.4f}$',
             ],
         }
 
+
 def generate_graph_exercise(difficulty, preferred_type=None):
+    """Graphes : Dijkstra et MST avec étapes."""
     n = random.randint(4, 6)
     edges = []
     for i in range(n):
@@ -169,19 +232,37 @@ def generate_graph_exercise(difficulty, preferred_type=None):
             adj[v].append((u, w))
         dist = [float('inf')] * n
         dist[start] = 0.0
+        prev = [None] * n
         pq = [(0.0, start)]
+        steps = [f'Graphe à {n} nœuds, {len(edges)} arêtes']
+        steps.append(f'Dijkstra de {start} à {end}')
+        
         while pq:
             d, u = heapq.heappop(pq)
             if d != dist[u]:
                 continue
+            steps.append(f'Nœud {u} extrait (distance = {d:.1f})')
             if u == end:
                 break
             for vv, ww in adj[u]:
                 nd = d + ww
                 if nd < dist[vv]:
                     dist[vv] = nd
+                    prev[vv] = u
                     heapq.heappush(pq, (nd, vv))
+                    steps.append(f'  Relaxation {u}→{vv} : dist[{vv}] = {nd:.1f}')
+        
         answer = float(dist[end]) if dist[end] != float('inf') else float('inf')
+        # Chemin
+        path = []
+        cur = end
+        while cur is not None:
+            path.append(cur)
+            cur = prev[cur]
+        path.reverse()
+        steps.append(f'Chemin : {" → ".join(map(str, path))}')
+        steps.append(f'Distance totale : {answer}')
+        
         return {
             'type': 'shortest_path',
             'num_nodes': n,
@@ -190,8 +271,11 @@ def generate_graph_exercise(difficulty, preferred_type=None):
             'end': end,
             'question': f"Donner la distance du plus court chemin de {start} à {end}",
             'answer': answer,
+            'solution_latex': f'd({start},{end}) = {answer}',
+            'steps': steps,
         }
     else:
+        # MST – Kruskal
         parent = list(range(n))
         rank = [0] * n
         def find(x):
@@ -209,16 +293,30 @@ def generate_graph_exercise(difficulty, preferred_type=None):
             if rank[ra] == rank[rb]:
                 rank[ra] += 1
             return True
+        
+        sorted_edges = sorted(edges, key=lambda e: e[2])
         total = 0
-        for u, v, w in sorted(edges, key=lambda e: e[2]):
+        mst_edges = []
+        steps = [f'Kruskal : tri des arêtes par poids croissant']
+        for u, v, w in sorted_edges:
+            steps.append(f'Arête {u}-{v} (poids {w}) : ', end='')
             if union(u, v):
                 total += w
+                mst_edges.append((u, v, w))
+                steps[-1] += 'ajoutée ✅'
+            else:
+                steps[-1] += 'rejetée (cycle) ❌'
+        steps.append(f'MST : {mst_edges}')
+        steps.append(f'Poids total : {total}')
+        
         return {
             'type': 'mst',
             'num_nodes': n,
             'edges': edges,
             'question': "Donner le poids total d'un arbre couvrant minimal (MST)",
             'answer': float(total),
+            'solution_latex': f'\\text{{Poids total}} = {total}',
+            'steps': steps,
         }
 
 EXERCISE_GENERATORS = {
@@ -270,7 +368,11 @@ def generate_exercise(
             module=data.module,
             difficulty=difficulty,
             problem_data=problem_data,
-            solution_data={'answer': problem_data.get('answer') or problem_data.get('exact_value')},
+            solution_data={
+                'answer': problem_data.get('answer') or problem_data.get('exact_value'),
+                'solution_latex': problem_data.get('solution_latex', ''),
+                'steps': problem_data.get('steps', []),
+            },
             points=difficulty * 10
         )
         db.add(exercise)
@@ -314,11 +416,11 @@ def submit_answer(
             if rel_error < 0.01:
                 is_correct = True
                 score = 100
-                feedback = "Correct!"
+                feedback = "Correct !"
             elif rel_error < 0.05:
                 is_correct = True
                 score = 80
-                feedback = "Presque correct! Vérifiez vos calculs."
+                feedback = "Presque correct ! Vérifiez vos calculs."
             else:
                 is_correct = False
                 score = max(0, 100 - int(rel_error * 100))
@@ -335,7 +437,7 @@ def submit_answer(
                 if error < 0.01:
                     is_correct = True
                     score = 100
-                    feedback = "Correct!"
+                    feedback = "Correct !"
                 else:
                     feedback = "Incorrect. Vérifiez vos calculs matriciels."
             else:
