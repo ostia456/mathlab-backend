@@ -92,36 +92,62 @@ def generate_matrix_exercise(difficulty):
     }
 
 def generate_ode_exercise(difficulty):
+    """Generate ODE exercise with exact values and LaTeX."""
+    from sympy import symbols, exp, sin, cos, Rational, latex, lambdify, dsolve, Eq, Function, Derivative
+    
+    t = symbols('t')
+    y = Function('y')
+    
     if difficulty <= 2:
         a = random.randint(1, 5)
         y0 = random.randint(1, 5)
-        t_eval = 1.0
-        answer = float(y0 * np.exp(-a * t_eval))
+        t_eval = Rational(1, 1)  # t = 1
+        
+        # Solution exacte : y = y0 * exp(-a*t)
+        exact_expr = y0 * exp(-a * t_eval)
+        exact_val = float(exact_expr.evalf())
+        
         return {
             'type': 'separable',
-            'equation': f"dy/dt = -{a}*y",
+            'equation': f'\\frac{{dy}}{{dt}} = -{a}y',
+            'equation_plain': f'dy/dt = -{a}*y',
             'initial_condition': [0, y0],
-            'solution_form': 'y(t) = y0 * exp(-a*t)',
-            'question': f"Calculer y({t_eval})",
-            't_eval': t_eval,
-            'answer': answer,
+            't_eval': float(t_eval),
+            'question': f'Calculer $y({float(t_eval)})$',
+            'answer': exact_val,
+            'solution_latex': f'y(t) = {y0}e^{{-{a}t}} \\\\ y({float(t_eval)}) = {y0}e^{{-{a}}} = {latex(exact_expr)} \\approx {exact_val:.4f}',
+            'steps': [
+                f'Équation différentielle : $\\frac{{dy}}{{dt}} = -{a}y$',
+                f'Solution générale : $y(t) = Ce^{{-{a}t}}$',
+                f'Avec $y(0) = {y0}$ : $C = {y0}$',
+                f'Solution particulière : $y(t) = {y0}e^{{-{a}t}}$',
+                f'En $t = {float(t_eval)}$ : $y({float(t_eval)}) = {y0}e^{{-{a}}} = {latex(exact_expr)} \\approx {exact_val:.4f}$',
+            ],
         }
     else:
         a, b = random.randint(1, 3), random.randint(1, 3)
-        t_eval = 1.0
-        answer = float(
-            (np.exp(-a * t_eval) * b)
-            + ((a * np.sin(t_eval) - np.cos(t_eval)) / (a**2 + 1))
-            + (np.exp(-a * t_eval) / (a**2 + 1))
-        )
+        t_eval = Rational(1, 1)
+        
+        exact_expr = (b * exp(-a * t_eval)
+                      + (a * sin(t_eval) - cos(t_eval)) / (a**2 + 1)
+                      + exp(-a * t_eval) / (a**2 + 1))
+        exact_val = float(exact_expr.evalf())
+        
         return {
             'type': 'linear',
-            'equation': f"dy/dt = -{a}*y + sin(t)",
+            'equation': f'\\frac{{dy}}{{dt}} + {a}y = \\sin(t)',
+            'equation_plain': f'dy/dt = -{a}*y + sin(t)',
             'initial_condition': [0, b],
-            'solution_hint': 'Use integrating factor method',
-            'question': f"Calculer y({t_eval})",
-            't_eval': t_eval,
-            'answer': answer,
+            't_eval': float(t_eval),
+            'question': f'Calculer $y({float(t_eval)})$',
+            'answer': exact_val,
+            'solution_latex': f'y(t) = {latex(exact_expr)} \\approx {exact_val:.4f}',
+            'steps': [
+                f'Équation : $\\frac{{dy}}{{dt}} + {a}y = \\sin(t)$',
+                'Solution par facteur intégrant $\\mu(t) = e^{' + str(a) + 't}$',
+                f'Solution : $y(t) = {latex(exact_expr)}$',
+                f'$y({float(t_eval)}) \\approx {exact_val:.4f}$',
+            ],
         }
 
 def generate_graph_exercise(difficulty, preferred_type=None):
