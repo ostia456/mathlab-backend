@@ -297,15 +297,14 @@ def generate_graph_exercise(difficulty, preferred_type=None):
         sorted_edges = sorted(edges, key=lambda e: e[2])
         total = 0
         mst_edges = []
-        steps = [f'Kruskal : tri des arêtes par poids croissant']
+        steps = ['Kruskal : tri des arêtes par poids croissant']
         for u, v, w in sorted_edges:
-            steps.append(f'Arête {u}-{v} (poids {w}) : ', end='')
             if union(u, v):
                 total += w
                 mst_edges.append((u, v, w))
-                steps[-1] += 'ajoutée ✅'
+                steps.append(f'Arête {u}-{v} (poids {w}) : ajoutée ✅')
             else:
-                steps[-1] += 'rejetée (cycle) ❌'
+                steps.append(f'Arête {u}-{v} (poids {w}) : rejetée (cycle) ❌')
         steps.append(f'MST : {mst_edges}')
         steps.append(f'Poids total : {total}')
         
