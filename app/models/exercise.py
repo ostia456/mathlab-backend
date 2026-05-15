@@ -37,6 +37,7 @@ class Exercise(Base):
             'problem_data': self.problem_data,
             'hints': self.hints,
             'time_limit': self.time_limit,
+            'solution_data': self.solution_data,
             'points': self.points,
             'is_active': self.is_active,
             'created_at': self.created_at.isoformat() if self.created_at else None
