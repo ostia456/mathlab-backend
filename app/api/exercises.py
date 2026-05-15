@@ -703,8 +703,6 @@ def generate_exercise(
         user_id=current_user.id, module=data.module
     ).first()
     difficulty = data.difficulty
-    if progress:
-        difficulty = progress.current_difficulty
 
     generator = EXERCISE_GENERATORS.get(exercise_type)
     if not generator:
