@@ -4,10 +4,11 @@ Génération procédurale d'exercices avec LaTeX et étapes de résolution
 """
 import random
 import heapq
+import traceback
 import numpy as np
 from sympy import (
-    symbols, integrate, latex, sympify, exp, sin, cos,
-    Rational, Function, Matrix, factorial, pretty, limit, oo
+    symbols, integrate, latex, sympify, N, exp, sin, cos,
+    Rational, Function, Matrix
 )
 from typing import Optional, List, Union, Any
 from pydantic import BaseModel, Field
@@ -70,20 +71,19 @@ def generate_numerical_integration_exercise(difficulty):
         a_coef, b_coef = random.randint(1, 3), random.randint(1, 3)
         f = a_coef * x**2 + b_coef * sin(x)
         method = 'Simpson'
-    
+
     a, b = 0, random.randint(1, 5)
     exact = integrate(f, (x, a, b))
-    exact_val = float(exact.evalf())
+    exact_val = float(N(exact))
     n = 4 * difficulty
-    h = (b - a) / n
+    h = Rational(b - a, n)
 
-    # Étapes de résolution
     steps = [
         f'Fonction : $f(x) = {latex(f)}$',
         f'Intervalle : $[{a}, {b}]$',
         f'Nombre de sous-intervalles : $n = {n}$',
-        f'Pas : $h = \\frac{{{b}-{a}}}{{{n}}} = {latex(Rational(b-a, n))}$',
-        f'Valeur exacte : $\\int_{{{a}}}^{{{b}}} f(x)\\,dx = {latex(exact)} \\approx {exact_val:.4f}$',
+        f'Pas : $h = \\frac{{{b}-{a}}}{{{n}}} = {latex(h)}$',
+        f'Valeur exacte : $\\int_{{{a}}}^{{{b}}} f(x)\\,dx = {latex(exact)} = {exact_val:.4f}$',
     ]
 
     return {
@@ -92,10 +92,11 @@ def generate_numerical_integration_exercise(difficulty):
         'exact_value': exact_val,
         'question': f"Calculer l'intégrale $\\int_{{{a}}}^{{{b}}} f(x)\\,dx$ par la méthode de {method} avec $n={n}$",
         'answer': exact_val,
+        'answer_latex': latex(exact),
         'method': method,
         'n': n,
         'h': float(h),
-        'solution_latex': f'\\int_{{{a}}}^{{{b}}} {latex(f)}\\,dx = {latex(exact)} \\approx {exact_val:.4f}',
+        'solution_latex': f'\\int_{{{a}}}^{{{b}}} {latex(f)}\\,dx = {latex(exact)} = {exact_val:.4f}',
         'steps': steps,
     }
 
@@ -106,19 +107,21 @@ def generate_matrix_exercise(difficulty):
     A = np.random.randint(-5, 6, (size, size))
     while abs(np.linalg.det(A)) < 0.1:
         A = np.random.randint(-5, 6, (size, size))
-    
+
     operation = random.choice(['determinant', 'inverse'])
     sympy_A = Matrix(A.tolist())
     det_A = sympy_A.det()
     steps = []
     solution_latex = ""
+    answer_latex = ""
 
     if operation == 'determinant':
-        answer = float(det_A)
+        answer = float(N(det_A))
+        answer_latex = latex(det_A)
         if size == 2:
             steps = [
                 f'Matrice : $A = {latex(sympy_A)}$',
-                f'Déterminant : $\\det(A) = ({A[0,0]})({A[1,1]}) - ({A[0,1]})({A[1,0]})$',
+                f'Déterminant : $\\det(A) = ({A[0,0]})\\cdot({A[1,1]}) - ({A[0,1]})\\cdot({A[1,0]})$',
                 f'$\\det(A) = {A[0,0]*A[1,1]} - {A[0,1]*A[1,0]} = {answer}$',
             ]
         else:
@@ -131,12 +134,13 @@ def generate_matrix_exercise(difficulty):
     else:
         inv_A = sympy_A.inv()
         answer = inv_A.tolist()
-        det_val = float(det_A)
+        answer_latex = latex(inv_A)
+        det_val = float(N(det_A))
         adj_A = sympy_A.adjugate()
         steps = [
             f'Matrice : $A = {latex(sympy_A)}$',
             f'Déterminant : $\\det(A) = {latex(det_A)} = {det_val:.4f}$',
-            f'Comatrice (transposée de la matrice des cofacteurs) : $\\operatorname{{adj}}(A) = {latex(adj_A)}$',
+            f'Comatrice : $\\operatorname{{adj}}(A) = {latex(adj_A)}$',
             f'Inverse : $A^{{-1}} = \\frac{{1}}{{\\det(A)}} \\operatorname{{adj}}(A) = \\frac{{1}}{{{latex(det_A)}}} {latex(adj_A)}$',
             f'$A^{{-1}} = {latex(inv_A)}$',
         ]
@@ -146,6 +150,7 @@ def generate_matrix_exercise(difficulty):
         'matrix': A.tolist(),
         'operation': operation,
         'answer': answer,
+        'answer_latex': answer_latex,
         'size': size,
         'question': f'Calculer le {operation} de la matrice $A$' if operation == 'determinant' else f'Calculer l\'inverse de la matrice $A$',
         'solution_latex': solution_latex,
@@ -157,15 +162,15 @@ def generate_ode_exercise(difficulty):
     """ODE avec valeurs exactes, LaTeX et étapes."""
     t = symbols('t')
     y = Function('y')
-    
+
     if difficulty <= 2:
         a = random.randint(1, 5)
         y0 = random.randint(1, 5)
         t_eval = Rational(1, 1)
-        
+
         exact_expr = y0 * exp(-a * t_eval)
-        exact_val = float(exact_expr.evalf())
-        
+        exact_val = float(N(exact_expr))
+
         return {
             'type': 'separable',
             'equation': f'\\frac{{dy}}{{dt}} = -{a}y',
@@ -174,40 +179,42 @@ def generate_ode_exercise(difficulty):
             't_eval': float(t_eval),
             'question': f'Calculer $y({float(t_eval)})$',
             'answer': exact_val,
-            'solution_latex': f'y(t) = {y0}e^{{-{a}t}} \\Rightarrow y({float(t_eval)}) = {y0}e^{{-{a}}} = {latex(exact_expr)} \\approx {exact_val:.4f}',
+            'answer_latex': latex(exact_expr),
+            'solution_latex': f'y(t) = {y0}e^{{-{a}t}} \\Rightarrow y({float(t_eval)}) = {y0}e^{{-{a}}} = {latex(exact_expr)} = {exact_val:.4f}',
             'steps': [
                 f'Équation : $\\frac{{dy}}{{dt}} = -{a}y$',
                 f'Séparable : $\\frac{{dy}}{{y}} = -{a}\\,dt$',
                 f'Solution générale : $y(t) = Ce^{{-{a}t}}$',
                 f'Condition $y(0) = {y0} \\Rightarrow C = {y0}$',
                 f'Solution : $y(t) = {y0}e^{{-{a}t}}$',
-                f'$y({float(t_eval)}) = {y0}e^{{-{a}}} = {latex(exact_expr)} \\approx {exact_val:.4f}$',
+                f'$y({float(t_eval)}) = {y0}e^{{-{a}}} = {latex(exact_expr)} = {exact_val:.4f}$',
             ],
         }
     else:
-        a, b = random.randint(1, 3), random.randint(1, 3)
+        a, b_val = random.randint(1, 3), random.randint(1, 3)
         t_eval = Rational(1, 1)
-        
-        exact_expr = (b * exp(-a * t_eval)
+
+        exact_expr = (b_val * exp(-a * t_eval)
                       + (a * sin(t_eval) - cos(t_eval)) / (a**2 + 1)
                       + exp(-a * t_eval) / (a**2 + 1))
-        exact_val = float(exact_expr.evalf())
-        
+        exact_val = float(N(exact_expr))
+
         return {
             'type': 'linear',
             'equation': f'\\frac{{dy}}{{dt}} + {a}y = \\sin(t)',
             'equation_plain': f'dy/dt = -{a}*y + sin(t)',
-            'initial_condition': [0, b],
+            'initial_condition': [0, b_val],
             't_eval': float(t_eval),
             'question': f'Calculer $y({float(t_eval)})$',
             'answer': exact_val,
-            'solution_latex': f'y(t) = {latex(exact_expr)} \\approx {exact_val:.4f}',
+            'answer_latex': latex(exact_expr),
+            'solution_latex': f'y(t) = {latex(exact_expr)} = {exact_val:.4f}',
             'steps': [
                 f'Équation : $\\frac{{dy}}{{dt}} + {a}y = \\sin(t)$',
                 f'Facteur intégrant : $\\mu(t) = e^{{\\int {a}\\,dt}} = e^{{{a}t}}$',
                 f'Multiplication : $\\frac{{d}}{{dt}}\\left[e^{{{a}t}} y\\right] = e^{{{a}t}}\\sin(t)$',
                 f'Solution : $y(t) = {latex(exact_expr)}$',
-                f'$y({float(t_eval)}) \\approx {exact_val:.4f}$',
+                f'$y({float(t_eval)}) = {latex(exact_expr)} = {exact_val:.4f}$',
             ],
         }
 
@@ -221,9 +228,9 @@ def generate_graph_exercise(difficulty, preferred_type=None):
             if random.random() < 0.5:
                 weight = random.randint(1, 10)
                 edges.append([i, j, weight])
-    
+
     exercise_type = preferred_type or random.choice(['shortest_path', 'mst'])
-    
+
     if exercise_type == 'shortest_path':
         start, end = 0, n - 1
         adj = {i: [] for i in range(n)}
@@ -236,7 +243,7 @@ def generate_graph_exercise(difficulty, preferred_type=None):
         pq = [(0.0, start)]
         steps = [f'Graphe à {n} nœuds, {len(edges)} arêtes']
         steps.append(f'Dijkstra de {start} à {end}')
-        
+
         while pq:
             d, u = heapq.heappop(pq)
             if d != dist[u]:
@@ -250,10 +257,9 @@ def generate_graph_exercise(difficulty, preferred_type=None):
                     dist[vv] = nd
                     prev[vv] = u
                     heapq.heappush(pq, (nd, vv))
-                    steps.append(f'  Relaxation {u}→{vv} : dist[{vv}] = {nd:.1f}')
-        
+                    steps.append(f'Relaxation {u}→{vv} : dist[{vv}] = {nd:.1f}')
+
         answer = float(dist[end]) if dist[end] != float('inf') else float('inf')
-        # Chemin
         path = []
         cur = end
         while cur is not None:
@@ -261,8 +267,8 @@ def generate_graph_exercise(difficulty, preferred_type=None):
             cur = prev[cur]
         path.reverse()
         steps.append(f'Chemin : {" → ".join(map(str, path))}')
-        steps.append(f'Distance totale : {answer}')
-        
+        steps.append(f'Distance totale : $d({start},{end}) = {answer}$')
+
         return {
             'type': 'shortest_path',
             'num_nodes': n,
@@ -271,11 +277,11 @@ def generate_graph_exercise(difficulty, preferred_type=None):
             'end': end,
             'question': f"Donner la distance du plus court chemin de {start} à {end}",
             'answer': answer,
+            'answer_latex': str(int(answer)) if answer != float('inf') else '\\infty',
             'solution_latex': f'd({start},{end}) = {answer}',
             'steps': steps,
         }
     else:
-        # MST – Kruskal
         parent = list(range(n))
         rank = [0] * n
         def find(x):
@@ -293,7 +299,7 @@ def generate_graph_exercise(difficulty, preferred_type=None):
             if rank[ra] == rank[rb]:
                 rank[ra] += 1
             return True
-        
+
         sorted_edges = sorted(edges, key=lambda e: e[2])
         total = 0
         mst_edges = []
@@ -302,18 +308,19 @@ def generate_graph_exercise(difficulty, preferred_type=None):
             if union(u, v):
                 total += w
                 mst_edges.append((u, v, w))
-                steps.append(f'Arête {u}-{v} (poids {w}) : ajoutée ✅')
+                steps.append(f'Arête {u}—{v} (poids {w}) : ajoutée ✅')
             else:
-                steps.append(f'Arête {u}-{v} (poids {w}) : rejetée (cycle) ❌')
+                steps.append(f'Arête {u}—{v} (poids {w}) : rejetée (cycle) ❌')
         steps.append(f'MST : {mst_edges}')
-        steps.append(f'Poids total : {total}')
-        
+        steps.append(f'Poids total : ${total}$')
+
         return {
             'type': 'mst',
             'num_nodes': n,
             'edges': edges,
             'question': "Donner le poids total d'un arbre couvrant minimal (MST)",
             'answer': float(total),
+            'answer_latex': str(total),
             'solution_latex': f'\\text{{Poids total}} = {total}',
             'steps': steps,
         }
@@ -343,24 +350,24 @@ def generate_exercise(
         'mst': 'graph',
     }
     exercise_type = type_mapping.get(data.type, data.type)
-    
+
     progress = db.query(UserProgress).filter_by(
         user_id=current_user.id, module=data.module
     ).first()
     difficulty = data.difficulty
     if progress:
         difficulty = progress.current_difficulty
-    
+
     generator = EXERCISE_GENERATORS.get(exercise_type)
     if not generator:
         raise HTTPException(status_code=400, detail=f"Unknown exercise type: {exercise_type}")
-    
+
     try:
         if exercise_type == 'graph' and data.type in ('shortest_path', 'mst'):
             problem_data = generator(difficulty, preferred_type=data.type)
         else:
             problem_data = generator(difficulty)
-        
+
         exercise = Exercise(
             title=f"Exercice {exercise_type} - Niveau {difficulty}",
             description=f"Résoudre le problème de {exercise_type}",
@@ -369,6 +376,7 @@ def generate_exercise(
             problem_data=problem_data,
             solution_data={
                 'answer': problem_data.get('answer') or problem_data.get('exact_value'),
+                'answer_latex': problem_data.get('answer_latex', ''),
                 'solution_latex': problem_data.get('solution_latex', ''),
                 'steps': problem_data.get('steps', []),
             },
@@ -377,13 +385,16 @@ def generate_exercise(
         db.add(exercise)
         db.commit()
         db.refresh(exercise)
-        
+
         return {
             'exercise': exercise.to_dict(),
             'difficulty_adjusted': progress is not None
         }
     except Exception as e:
+        print("ERROR in generate_exercise:")
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/{exercise_id}/submit")
 def submit_answer(
@@ -396,26 +407,31 @@ def submit_answer(
     exercise = db.query(Exercise).get(exercise_id)
     if not exercise:
         raise HTTPException(status_code=404, detail="Exercise not found")
-    
+
     user_answer = data.answer
     time_spent = data.time_spent
     correct_answer = exercise.solution_data.get('answer')
-    
+    correct_answer_latex = exercise.solution_data.get('answer_latex', '')
+
     is_correct = False
     score = 0
     feedback = ""
-    
+
     if isinstance(correct_answer, (int, float)):
         try:
-            user_val = float(user_answer)
+            # Accepte les fractions
+            if isinstance(user_answer, str) and '/' in user_answer:
+                user_val = float(N(sympify(user_answer)))
+            else:
+                user_val = float(user_answer)
             correct_val = float(correct_answer)
             error = abs(user_val - correct_val)
             rel_error = error / abs(correct_val) if correct_val != 0 else error
-            
+
             if rel_error < 0.01:
                 is_correct = True
                 score = 100
-                feedback = "Correct !"
+                feedback = f"Correct ! ${correct_answer_latex} = {correct_val:.4f}$"
             elif rel_error < 0.05:
                 is_correct = True
                 score = 80
@@ -423,10 +439,11 @@ def submit_answer(
             else:
                 is_correct = False
                 score = max(0, 100 - int(rel_error * 100))
-                feedback = f"Incorrect. La réponse attendue était {correct_val:.4f}"
+                latex_str = correct_answer_latex or str(correct_val)
+                feedback = f"Incorrect. La réponse est ${latex_str}$"
         except Exception:
-            feedback = "Format de réponse invalide"
-    
+            feedback = "Format invalide. Utilisez un nombre ou une fraction (ex: 2/3)."
+
     elif isinstance(correct_answer, list):
         try:
             user_array = np.array(user_answer)
@@ -436,14 +453,14 @@ def submit_answer(
                 if error < 0.01:
                     is_correct = True
                     score = 100
-                    feedback = "Correct !"
+                    feedback = f"Correct ! $A^{{-1}} = {correct_answer_latex}$" if correct_answer_latex else "Correct !"
                 else:
                     feedback = "Incorrect. Vérifiez vos calculs matriciels."
             else:
                 feedback = "Dimensions incorrectes"
         except Exception:
             feedback = "Format de réponse invalide"
-    
+
     attempt = ExerciseAttempt(
         user_id=current_user.id,
         exercise_id=exercise_id,
@@ -454,7 +471,7 @@ def submit_answer(
         time_spent=time_spent
     )
     db.add(attempt)
-    
+
     progress = db.query(UserProgress).filter_by(
         user_id=current_user.id, module=exercise.module
     ).first()
@@ -471,40 +488,41 @@ def submit_answer(
             topic_progress={},
         )
         db.add(progress)
-    
+
     progress.exercises_attempted += 1
     if is_correct:
         progress.exercises_completed += 1
         progress.total_points += exercise.points
-    
+
     progress.update_success_rate()
     progress.adjust_difficulty()
     db.commit()
-    
+
     return {
         'is_correct': is_correct,
         'score': score,
         'feedback': feedback,
         'correct_answer': correct_answer if not is_correct else None,
+        'correct_answer_latex': correct_answer_latex if not is_correct else None,
         'progress': progress.to_dict()
     }
+
 
 @router.get("/history")
 def get_history(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get user's exercise history"""
     attempts = db.query(ExerciseAttempt).filter_by(
         user_id=current_user.id
     ).order_by(ExerciseAttempt.created_at.desc()).limit(50).all()
     return {'attempts': [a.to_dict() for a in attempts]}
+
 
 @router.get("/progress")
 def get_progress(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get user's progress across all modules"""
     progress = db.query(UserProgress).filter_by(user_id=current_user.id).all()
     return {'progress': [p.to_dict() for p in progress]}
