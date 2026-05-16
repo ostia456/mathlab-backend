@@ -512,3 +512,21 @@ def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
     _reset_tokens.pop(email, None)
 
     return {"message": "Mot de passe réinitialisé avec succès. Vous pouvez vous connecter."}
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str = Field(..., min_length=6)
+
+@router.put("/change-password")
+def change_password(
+    data: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Change le mot de passe de l'utilisateur connecté."""
+    if not current_user.check_password(data.old_password):
+        raise HTTPException(status_code=400, detail="Ancien mot de passe incorrect.")
+    
+    current_user.set_password(data.new_password)
+    db.commit()
+    return {"message": "Mot de passe modifié avec succès."}
