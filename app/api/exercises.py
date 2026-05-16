@@ -35,6 +35,7 @@ class GenerateExerciseRequest(BaseModel):
     module: str = Field(default='dynamical_systems')
     type: str = Field(default='ode')
     difficulty: int = Field(default=1, ge=1, le=5)
+    mode: str = Field(default='manual')  # 'manual' ou 'auto'
 
 class SubmitAnswerRequest(BaseModel):
     answer: Any
@@ -702,7 +703,10 @@ def generate_exercise(
     progress = db.query(UserProgress).filter_by(
         user_id=current_user.id, module=data.module
     ).first()
+    mode = data.mode if hasattr(data, 'mode') else 'manual'
     difficulty = data.difficulty
+    if progress and mode == 'auto':
+        difficulty = progress.current_difficulty
 
     generator = EXERCISE_GENERATORS.get(exercise_type)
     if not generator:
