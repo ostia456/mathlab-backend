@@ -56,7 +56,10 @@ class User(Base):
         }
 
     def is_teacher(self):
-        return self.role in ['teacher', 'admin']
+        return self.role in ['teacher', 'admin', 'super_admin']
 
     def is_admin(self):
-        return self.role == 'admin'
+        return self.role in ['admin', 'super_admin']
+
+    def is_super_admin(self):
+        return self.role == 'super_admin'
