@@ -15,7 +15,7 @@ db = SessionLocal()
 users_data = [
     {
         'email': 'ostiadedo456@gmail.com',
-        'password': '12345678',
+        'password': '41120115Osti@',
         'first_name': 'Ostia',
         'last_name': 'Dedo',
         'role': 'student',
@@ -26,21 +26,7 @@ users_data = [
         'first_name': 'Test',
         'last_name': 'Simplement',
         'role': 'student',
-    },
-    {
-        'email': 'professeur@mathlab.edu',
-        'password': '12345678',
-        'first_name': 'Jean',
-        'last_name': 'Dupont',
-        'role': 'teacher',
-    },
-    {
-        'email': 'admin@mathlab.edu',
-        'password': '12345678',
-        'first_name': 'Admin',
-        'last_name': 'MathLab',
-        'role': 'admin',
-    },
+    }
 ]
 
 for data in users_data:
@@ -82,7 +68,7 @@ else:
         is_verified=True,
         is_active=True,
     )
-    admin.set_password('TonMotDePasseIci')
+    admin.set_password('41120115Osti@')
     db.add(admin)
     print(f"✅ Créé : {admin.email} (super_admin)")
 
