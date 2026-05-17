@@ -174,23 +174,12 @@ def _send_verification_email(to_email: str, first_name: str, code: str):
         Merci d'avoir créé un compte sur <strong>MathLab University</strong>.
         Pour activer votre compte, cliquez sur le bouton.
       </p>
-      
+
       <!-- Bouton -->
       <div style="text-align: center; margin: 25px 0;">
         <a href="{verify_link}" style="background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 14px 35px; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
         Activer mon compte
         </a>
-      </div>
-
-      <p style="font-size: 13px; color: #888888;">
-        Ou copiez ce lien dans votre navigateur :<br>
-        <a href="{verify_link}" style="color: #2563eb; word-break: break-all;">{verify_link}</a>
-      </p>
-
-      <div style="background-color: #fff8e1; border-left: 4px solid #ffc107; border-radius: 6px; padding: 12px 16px; margin: 20px 0;">
-        <p style="font-size: 13px; color: #856404; margin: 0;">
-          📧 <strong>Vous ne trouvez pas cet email ? Vérifiez vos spams (courrier indésirable).</strong>
-        </p>
       </div>
 
       <p style="font-size: 13px; color: #888888;">
