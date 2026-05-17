@@ -140,64 +140,145 @@ def _validate_code(email: str, code: str) -> tuple:
     return True, ""
 
 def _send_verification_email(to_email: str, first_name: str, code: str):
-    """Envoie par SendGrid avec lien de vérification."""
+    """Envoie par SendGrid avec template optimisé anti-spam."""
     api_key = os.getenv('SENDGRID_API_KEY', '')
 
     if not api_key:
-        print(f"[DEV] Code: {code}")
+        print(f"\n{'='*40}")
+        print(f"[DEV] Code de vérification pour {to_email} : {code}")
+        print(f"{'='*40}\n")
         return
 
     # Lien de vérification direct
     verify_link = f"https://mathlab-backend.onrender.com/api/auth/verify-email/{to_email}-{code}"
 
     html_body = f"""
-    <div style="font-family: Arial, sans-serif; max-width: 500px; margin: auto; padding: 30px;">
-        <h1 style="color: #1a1a2e;">MathLab University</h1>
-        <p>Bonjour <strong>{first_name}</strong>,</p>
-        <p>Merci de vous être inscrit sur MathLab University.</p>
-        <p>Cliquez sur le bouton ci-dessous pour <strong>activer votre compte</strong> :</p>
-        <div style="text-align: center; margin: 30px 0;">
-            <a href="{verify_link}"
-               style="background-color: #2563eb; color: white; padding: 14px 28px;
-                      text-decoration: none; border-radius: 8px; font-weight: bold;
-                      font-size: 16px;">
-                ✅ Activer mon compte
-            </a>
-        </div>
-        <p style="font-size: 13px; color: gray;">
-            Ou copiez ce lien dans votre navigateur :<br/>
-            <a href="{verify_link}">{verify_link}</a>
+    <!DOCTYPE html>
+    <html lang="fr">
+    <body style="font-family: Arial, Helvetica, sans-serif; max-width: 600px; margin: auto; padding: 20px; color: #333333; background-color: #ffffff;">
+
+      <!-- En-tête -->
+      <div style="text-align: center; margin-bottom: 30px;">
+        <h1 style="color: #2563eb; font-size: 22px; margin: 0;">MathLab University</h1>
+        <p style="color: #666666; font-size: 13px; margin: 4px 0 0 0;">
+          Département de Mathématiques-Informatique — UNSTIM
         </p>
-        <div style="margin-top: 24px; padding: 16px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
-            <p style="color: #856404; font-size: 13px; margin: 0;">
-                📧 <strong>Vous ne trouvez pas cet email ? Vérifiez vos spams (courrier indésirable).</strong>
-            </p>
-        </div>
-    </div>
+      </div>
+
+      <hr style="border: none; border-top: 1px solid #eeeeee; margin: 20px 0;">
+
+      <!-- Corps -->
+      <p style="font-size: 15px;">Bonjour <strong>{first_name}</strong>,</p>
+
+      <p style="font-size: 15px;">
+        Merci d'avoir créé un compte sur <strong>MathLab University</strong>.
+        Pour activer votre compte, utilisez le code ci-dessous ou cliquez sur le bouton.
+      </p>
+
+      <!-- Code -->
+      <div style="background-color: #f4f6f9; border-radius: 10px; padding: 25px; text-align: center; margin: 25px 0;">
+        <p style="font-size: 13px; color: #888888; margin: 0 0 8px 0;">VOTRE CODE DE VÉRIFICATION</p>
+        <p style="font-family: 'Courier New', monospace; font-size: 36px; font-weight: bold; letter-spacing: 10px; color: #2563eb; margin: 0;">
+          {code}
+        </p>
+        <p style="font-size: 12px; color: #999999; margin: 8px 0 0 0;">
+          Valable 15 minutes
+        </p>
+      </div>
+
+      <!-- Bouton -->
+      <div style="text-align: center; margin: 25px 0;">
+        <a href="{verify_link}" style="background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 14px 35px; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
+          ✅ Activer mon compte
+        </a>
+      </div>
+
+      <p style="font-size: 13px; color: #888888;">
+        Ou copiez ce lien dans votre navigateur :<br>
+        <a href="{verify_link}" style="color: #2563eb; word-break: break-all;">{verify_link}</a>
+      </p>
+
+      <div style="background-color: #fff8e1; border-left: 4px solid #ffc107; border-radius: 6px; padding: 12px 16px; margin: 20px 0;">
+        <p style="font-size: 13px; color: #856404; margin: 0;">
+          📧 <strong>Vous ne trouvez pas cet email ? Vérifiez vos spams (courrier indésirable).</strong>
+        </p>
+      </div>
+
+      <p style="font-size: 13px; color: #888888;">
+        Si vous n'avez pas créé de compte sur MathLab University, ignorez simplement cet email.
+      </p>
+
+      <hr style="border: none; border-top: 1px solid #eeeeee; margin: 30px 0 20px 0;">
+
+      <!-- Pied de page conforme -->
+      <div style="text-align: center;">
+        <p style="font-size: 11px; color: #aaaaaa; margin: 0 0 4px 0;">
+          MathLab University — UNSTIM, Bénin
+        </p>
+        <p style="font-size: 11px; color: #aaaaaa; margin: 0 0 4px 0;">
+          <a href="mailto:mathlabuniversity@gmail.com" style="color: #aaaaaa;">mathlabuniversity@gmail.com</a>
+        </p>
+        <p style="font-size: 11px; color: #aaaaaa; margin: 0;">
+          Vous recevez cet email car vous avez créé un compte sur MathLab University.
+          <a href="https://mathlabuniversity.vercel.app/unsubscribe" style="color: #aaaaaa;">Se désabonner</a>
+        </p>
+      </div>
+
+    </body>
+    </html>
     """
+
+    # Version texte (obligatoire pour anti-spam)
+    text_body = f"""
+MathLab University — UNSTIM, Bénin
+
+Bonjour {first_name},
+
+Merci d'avoir créé un compte sur MathLab University.
+
+Votre code de vérification : {code}
+Valable 15 minutes.
+
+Ou activez votre compte en cliquant sur ce lien :
+{verify_link}
+
+Si vous n'avez pas créé de compte, ignorez cet email.
+
+MathLab University · UNSTIM, Bénin
+mathlabuniversity@gmail.com
+Se désabonner : https://mathlabuniversity.vercel.app/unsubscribe
+"""
 
     try:
         response = requests.post(
             "https://api.sendgrid.com/v3/mail/send",
             json={
-                "personalizations": [{"to": [{"email": to_email}]}],
-                "from": {"email": "mathlabuniversity@gmail.com", "name": "MathLab University"},
-                "subject": "MathLab University - Activez votre compte",
-                "content": [{"type": "text/html", "value": html_body}]
+                "personalizations": [{
+                    "to": [{"email": to_email}],
+                    "subject": "Votre code de vérification - MathLab University"
+                }],
+                "from": {
+                    "email": "mathlabuniversity@gmail.com",
+                    "name": "MathLab University"
+                },
+                "subject": "Votre code de vérification - MathLab University",
+                "content": [
+                    {"type": "text/html", "value": html_body},
+                    {"type": "text/plain", "value": text_body}
+                ]
             },
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
             }
         )
-        if response.status_code == 202:
+        if response.status_code in [200, 202]:
             print(f"[INFO] Email envoyé à {to_email}")
         else:
-            print(f"[ERROR] {response.text}")
+            print(f"[ERROR] SendGrid: {response.status_code} - {response.text}")
     except Exception as e:
-        print(f"[WARN] {e}")
-        print(f"[DEV] Code: {code}")
-
+        print(f"[WARN] Email send failed: {e}")
+        print(f"[DEV] Code de vérification pour {to_email} : {code}")
 # ─────────────────────────────────────────────────────────────────────────────
 # REGISTER
 # ─────────────────────────────────────────────────────────────────────────────
