@@ -29,18 +29,25 @@ def track_visitor(db: Session = Depends(get_db)):
 
 @router.get("/stats")
 def get_stats(db: Session = Depends(get_db)):
-    """Retourne les statistiques visiteurs."""
     today = date.today()
-    week_ago = today - timedelta(days=7)
-    month_ago = today - timedelta(days=30)
+    week_ago = today - timedelta(days=6)
 
-    today_stat = db.query(VisitorStat).filter_by(date=today).first()
     week_stats = db.query(VisitorStat).filter(VisitorStat.date >= week_ago).all()
-    total = db.query(VisitorStat).with_entities(func.sum(VisitorStat.count)).scalar() or 0    
+    stats_dict = {s.date: s.count for s in week_stats}
+
+    # Remplit les jours manquants avec 0
+    daily = []
+    for i in range(7):
+        d = week_ago + timedelta(days=i)
+        daily.append({"date": str(d), "count": stats_dict.get(d, 0)})
+
+    month_ago = today - timedelta(days=30)
+    total = db.query(VisitorStat).with_entities(func.sum(VisitorStat.count)).scalar() or 0
+
     return {
-        "today": today_stat.count if today_stat else 0,
+        "today": stats_dict.get(today, 0),
         "this_week": sum(s.count for s in week_stats),
         "this_month": sum(s.count for s in db.query(VisitorStat).filter(VisitorStat.date >= month_ago).all()),
         "total": total,
-        "daily": [{"date": str(s.date), "count": s.count} for s in week_stats]
+        "daily": daily
     }
