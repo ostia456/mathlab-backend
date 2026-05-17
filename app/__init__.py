@@ -1,7 +1,6 @@
 import os
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine
@@ -73,6 +72,8 @@ from app.api.graph_theory import router as gt_router
 from app.api.linear_algebra import router as la_router
 from app.api.numerical_methods import router as nm_router
 from app.api.scenarios import router as sc_router
+from app.api.visitor import router as visitor_router
+
 
 app.include_router(auth_router, prefix="/api/auth", tags=["Authentification"])
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["Dashboard"])
@@ -82,7 +83,7 @@ app.include_router(gt_router, prefix="/api/graph-theory", tags=["Théorie des Gr
 app.include_router(la_router, prefix="/api/linear-algebra", tags=["Algèbre Linéaire"])
 app.include_router(nm_router, prefix="/api/numerical-methods", tags=["Méthodes Numériques"])
 app.include_router(sc_router, prefix="/api/scenarios", tags=["Scénarios"])
-
+app.include_router(visitor_router, prefix="/api/visitor", tags=["Visiteurs"])
 # ------------------------------
 # 7. Routes de base
 # ------------------------------
