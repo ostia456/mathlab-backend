@@ -17,6 +17,7 @@ class User(Base):
     first_name = Column(String(50), nullable=False)
     last_name = Column(String(50), nullable=False)
     role = Column(String(20), nullable=False, default='student')
+    country = Column(String(50), default='')
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -49,6 +50,7 @@ class User(Base):
             'last_name': self.last_name,
             'full_name': f"{self.first_name} {self.last_name}",
             'role': self.role,
+            'country': self.country,
             'is_active': self.is_active,
             'is_verified': self.is_verified,
             'created_at': self.created_at.isoformat() if self.created_at else None,

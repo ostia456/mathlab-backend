@@ -45,6 +45,7 @@ class RegisterRequest(BaseModel):
     first_name: str = Field(..., min_length=1)
     last_name: str = Field(..., min_length=1)
     role: str = Field(default="student")
+    country: str = Field(default='')
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -283,6 +284,7 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
         last_name=data.last_name,
         role=data.role,
         is_verified=False,
+        country=data.country,
     )
     user.set_password(data.password)
     db.add(user)
