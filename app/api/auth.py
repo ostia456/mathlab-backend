@@ -425,7 +425,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         {
             'sub': str(user.id),
             'iat': datetime.now(timezone.utc),
-            'exp': datetime.now(timezone.utc) + timedelta(hours=24)
+            'exp': datetime.now(timezone.utc) + timedelta(minutes=30)
         },
         os.getenv('JWT_SECRET_KEY', 'jwt-secret'),
         algorithm='HS256'
