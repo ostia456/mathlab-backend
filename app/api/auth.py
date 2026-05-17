@@ -172,24 +172,13 @@ def _send_verification_email(to_email: str, first_name: str, code: str):
 
       <p style="font-size: 15px;">
         Merci d'avoir créé un compte sur <strong>MathLab University</strong>.
-        Pour activer votre compte, utilisez le code ci-dessous ou cliquez sur le bouton.
+        Pour activer votre compte, cliquez sur le bouton.
       </p>
-
-      <!-- Code -->
-      <div style="background-color: #f4f6f9; border-radius: 10px; padding: 25px; text-align: center; margin: 25px 0;">
-        <p style="font-size: 13px; color: #888888; margin: 0 0 8px 0;">VOTRE CODE DE VÉRIFICATION</p>
-        <p style="font-family: 'Courier New', monospace; font-size: 36px; font-weight: bold; letter-spacing: 10px; color: #2563eb; margin: 0;">
-          {code}
-        </p>
-        <p style="font-size: 12px; color: #999999; margin: 8px 0 0 0;">
-          Valable 15 minutes
-        </p>
-      </div>
-
+      
       <!-- Bouton -->
       <div style="text-align: center; margin: 25px 0;">
         <a href="{verify_link}" style="background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 14px 35px; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
-          ✅ Activer mon compte
+        Activer mon compte
         </a>
       </div>
 
@@ -263,8 +252,8 @@ Se désabonner : https://mathlabuniversity.vercel.app/unsubscribe
                 },
                 "subject": "Votre code de vérification - MathLab University",
                 "content": [
-                    {"type": "text/plain", "value": text_body},
-                    {"type": "text/html", "value": html_body}
+                    {"type": "text/html", "value": html_body},
+                    {"type": "text/plain", "value": text_body}
                 ]
             },
             headers={
