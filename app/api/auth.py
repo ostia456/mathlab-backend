@@ -242,7 +242,7 @@ Se désabonner : https://mathlabuniversity.vercel.app/unsubscribe
                 },
                 "subject": "Votre code de vérification - MathLab University",
                 "content": [
-                    {"type": "text/plain", "value": text_body}
+                    {"type": "text/plain", "value": text_body},
                     {"type": "text/html", "value": html_body},
                 ]
             },
