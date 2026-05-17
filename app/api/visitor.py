@@ -36,8 +36,7 @@ def get_stats(db: Session = Depends(get_db)):
 
     today_stat = db.query(VisitorStat).filter_by(date=today).first()
     week_stats = db.query(VisitorStat).filter(VisitorStat.date >= week_ago).all()
-    total = db.query(VisitorStat).with_entities(func.sum(VisitorStat.count)).scalar() or 0
-    return {
+    total = db.query(VisitorStat).with_entities(func.sum(VisitorStat.count)).scalar() or 0    return {
         "today": today_stat.count if today_stat else 0,
         "this_week": sum(s.count for s in week_stats),
         "this_month": sum(s.count for s in db.query(VisitorStat).filter(VisitorStat.date >= month_ago).all()),
