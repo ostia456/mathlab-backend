@@ -242,8 +242,8 @@ Se désabonner : https://mathlabuniversity.vercel.app/unsubscribe
                 },
                 "subject": "Votre code de vérification - MathLab University",
                 "content": [
-                    {"type": "text/html", "value": html_body},
                     {"type": "text/plain", "value": text_body}
+                    {"type": "text/html", "value": html_body},
                 ]
             },
             headers={
@@ -523,7 +523,10 @@ def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
                 "personalizations": [{"to": [{"email": email}]}],
                 "from": {"email": "mathlabuniversity@gmail.com", "name": "MathLab University"},
                 "subject": "MathLab University - Réinitialisation du mot de passe",
-                "content": [{"type": "text/html", "value": html_body}]
+                "content": [
+                    {"type": "text/plain", "value": f"MathLab University\n\nRéinitialisation de mot de passe\n\nCliquez sur ce lien : {reset_link}\n\nValable {RESET_TOKEN_EXPIRY_MINUTES} minutes."},
+                    {"type": "text/html", "value": html_body}
+                ]
             },
             headers={
                 "Authorization": f"Bearer {api_key}",
