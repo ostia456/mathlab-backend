@@ -525,7 +525,7 @@ def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
                 "subject": "MathLab University - Réinitialisation du mot de passe",
                 "content": [
                     {"type": "text/plain", "value": f"MathLab University\n\nRéinitialisation de mot de passe\n\nCliquez sur ce lien : {reset_link}\n\nValable {RESET_TOKEN_EXPIRY_MINUTES} minutes."},
-                    {"type": "text/html", "value": html_body}
+                    {"type": "text/html", "value": html_body},
                 ]
             },
             headers={
