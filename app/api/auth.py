@@ -594,3 +594,24 @@ def change_password(
     current_user.set_password(data.new_password)
     db.commit()
     return {"message": "Mot de passe modifié avec succès."}
+
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    current_user: User = Depends(get_current_teacher),
+    db: Session = Depends(get_db)
+):
+    """Supprime un utilisateur (admin/super_admin seulement)."""
+    if not current_user.is_admin():
+        raise HTTPException(status_code=403, detail="Réservé aux administrateurs.")
+    
+    user = db.query(User).get(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable.")
+    
+    if user.role == 'super_admin':
+        raise HTTPException(status_code=403, detail="Impossible de supprimer le super admin.")
+    
+    db.delete(user)
+    db.commit()
+    return {"message": "Utilisateur supprimé."}
