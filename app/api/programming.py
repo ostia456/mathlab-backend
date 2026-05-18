@@ -81,7 +81,28 @@ def list_challenges(db: Session = Depends(get_db)):
         ProgrammingChallenge.created_at.desc()
     ).all()
     return {"challenges": [c.to_dict() for c in challenges]}
+@router.get("/leaderboard")
+def get_global_leaderboard(db: Session = Depends(get_db)):
+    """Classement global programmation."""
+    from sqlalchemy import func, desc
+    results = db.query(
+        User.first_name,
+        User.last_name,
+        func.sum(ProgrammingSubmission.score).label('total_score'),
+        func.min(ProgrammingSubmission.execution_time).label('best_time'),
+    ).join(ProgrammingSubmission).filter(
+        ProgrammingSubmission.status == 'success'
+    ).group_by(User.id).order_by(desc('total_score')).limit(20).all()
 
+    return {
+        "leaderboard": [
+            {
+                "name": f"{r[0]} {r[1]}",
+                "score": float(r[2] or 0),
+                "time": float(r[3] or 0) if r[3] else None,
+            } for r in results
+        ]
+    }
 
 @router.get("/{challenge_id}")
 def get_challenge(challenge_id: int, db: Session = Depends(get_db)):
@@ -157,25 +178,3 @@ def create_programming_challenge(
     db.commit()
     return {"message": "Défi créé.", "challenge": challenge.to_dict()}
 
-@router.get("/leaderboard")
-def get_global_leaderboard(db: Session = Depends(get_db)):
-    """Classement global programmation."""
-    from sqlalchemy import func, desc
-    results = db.query(
-        User.first_name,
-        User.last_name,
-        func.sum(ProgrammingSubmission.score).label('total_score'),
-        func.min(ProgrammingSubmission.execution_time).label('best_time'),
-    ).join(ProgrammingSubmission).filter(
-        ProgrammingSubmission.status == 'success'
-    ).group_by(User.id).order_by(desc('total_score')).limit(20).all()
-
-    return {
-        "leaderboard": [
-            {
-                "name": f"{r[0]} {r[1]}",
-                "score": float(r[2] or 0),
-                "time": float(r[3] or 0) if r[3] else None,
-            } for r in results
-        ]
-    }
