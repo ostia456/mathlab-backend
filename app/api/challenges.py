@@ -51,7 +51,8 @@ def get_challenge(challenge_id: int, db: Session = Depends(get_db)):
 def get_leaderboard(challenge_id: int, db: Session = Depends(get_db)):
     """Classement d'un challenge."""
     results = db.query(
-        User.full_name,
+        User.first_name,
+        User.last_name,
         func.sum(ChallengeSubmission.score).label('total_score')
     ).join(ChallengeSubmission).filter(
         ChallengeSubmission.challenge_id == challenge_id
@@ -59,7 +60,7 @@ def get_leaderboard(challenge_id: int, db: Session = Depends(get_db)):
 
     return {
         "leaderboard": [
-            {"name": r[0], "score": float(r[1] or 0)} for r in results
+            {"name": f"{r[0]} {r[1]}", "score": float(r[2] or 0)} for r in results
         ]
     }
 
