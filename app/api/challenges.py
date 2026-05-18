@@ -103,7 +103,8 @@ def get_challenge_exercises(
                 "exercise_id": e.exercise_id,
                 "points": e.points,
                 "order_num": e.order_num,
-                "problem_data": db.query(Exercise).get(e.exercise_id).problem_data if db.query(Exercise).get(e.exercise_id) else None,
+                "problem_data": db.query(Exercise).get(e.exercise_id).problem_data,
+                "solution_data": db.query(Exercise).get(e.exercise_id).solution_data,
             } for e in exercises
         ],
         "submissions": [s.to_dict() for s in submissions],
@@ -148,17 +149,41 @@ def create_challenge(
     if data.module != 'all':
         modules = [data.module]
     
+    import random as pyrandom
+
+    # Génère des exercices sans doublons
+    selected_exercises = []
+    used_ids = set()
+    attempts = 0
+
     for i in range(data.exercise_count):
         module = modules[i % len(modules)]
-        exercise = db.query(Exercise).filter_by(module=module, difficulty=data.difficulty).order_by(sqlfunc.random()).first()
-        if exercise:
-            ce = ChallengeExercise(
-                challenge_id=challenge.id,
-                exercise_id=exercise.id,
-                points=10 + (i * 2),
-                order_num=i + 1,
-            )
-            db.add(ce)
+        available = db.query(Exercise).filter(
+            Exercise.module == module,
+            Exercise.difficulty == data.difficulty,
+            ~Exercise.id.in_(used_ids)
+        ).all()
+        
+        if available:
+            exercise = pyrandom.choice(available)
+        else:
+            exercise = db.query(Exercise).filter(
+                Exercise.module == module,
+                Exercise.difficulty == data.difficulty
+            ).order_by(sqlfunc.random()).first()
+        
+        if exercise and exercise.id not in used_ids:
+            used_ids.add(exercise.id)
+            selected_exercises.append(exercise)
+
+    for i, exercise in enumerate(selected_exercises):
+        ce = ChallengeExercise(
+            challenge_id=challenge.id,
+            exercise_id=exercise.id,
+            points=10 + (i * 2),
+            order_num=i + 1,
+        )
+        db.add(ce)
     
     db.commit()
     return {"message": "Challenge créé.", "challenge": challenge.to_dict()}
