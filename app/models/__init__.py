@@ -9,5 +9,6 @@ from app.models.user import User
 from app.models.exercise import Exercise, ExerciseAttempt
 from app.models.scenario import Scenario
 from app.models.progress import UserProgress
+from app.models.challenge import Challenge, ChallengeExercise, ChallengeSubmission
 
 __all__ = ['Base', 'User', 'Exercise', 'ExerciseAttempt', 'Scenario', 'UserProgress']

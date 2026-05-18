@@ -6,7 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from jose import JWTError
-
 # ------------------------------
 # 1. Configuration de base
 # ------------------------------
@@ -73,8 +72,10 @@ from app.api.linear_algebra import router as la_router
 from app.api.numerical_methods import router as nm_router
 from app.api.scenarios import router as sc_router
 from app.api.visitor import router as visitor_router
+from app.api.challenges import router as challenges_router
 
 
+app.include_router(challenges_router, prefix="/api/challenges", tags=["Challenges"])
 app.include_router(auth_router, prefix="/api/auth", tags=["Authentification"])
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(ds_router, prefix="/api/dynamical-systems", tags=["Systèmes Dynamiques"])
