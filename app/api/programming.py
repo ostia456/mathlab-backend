@@ -112,6 +112,20 @@ def get_challenge(challenge_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Défi introuvable.")
     return {"challenge": challenge.to_dict(include_solution=False)}
 
+@router.post("/{challenge_id}/execute")
+def execute_code(
+    challenge_id: int,
+    data: SubmitCodeRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Exécute le code sans l'enregistrer (test)."""
+    challenge = db.query(ProgrammingChallenge).get(challenge_id)
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Défi introuvable.")
+
+    result = execute_python_code(data.code)
+    return {"result": result}
 
 @router.post("/{challenge_id}/submit")
 def submit_code(
