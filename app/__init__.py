@@ -73,8 +73,9 @@ from app.api.numerical_methods import router as nm_router
 from app.api.scenarios import router as sc_router
 from app.api.visitor import router as visitor_router
 from app.api.challenges import router as challenges_router
-
-
+from app.api.programming import router as programming_router
+# ...
+app.include_router(programming_router, prefix="/api/programming", tags=["Programmation"])
 app.include_router(challenges_router, prefix="/api/challenges", tags=["Challenges"])
 app.include_router(auth_router, prefix="/api/auth", tags=["Authentification"])
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["Dashboard"])
