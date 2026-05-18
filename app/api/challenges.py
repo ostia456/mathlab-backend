@@ -52,18 +52,18 @@ def list_challenges(db: Session = Depends(get_db)):
 
 
 @router.get("/active")
-def get_active_challenge(db: Session = Depends(get_db)):
-    """Retourne le challenge en cours."""
+def get_active_challenges(db: Session = Depends(get_db)):
+    """Retourne tous les challenges en cours."""
     today = date.today()
-    challenge = db.query(Challenge).filter(
+    challenges = db.query(Challenge).filter(
         Challenge.start_date <= today,
         Challenge.end_date >= today,
         Challenge.is_active == True
-    ).first()
-    if not challenge:
-        return {"challenge": None, "message": "Aucun challenge en cours."}
-    return {"challenge": challenge.to_dict()}
-
+    ).order_by(Challenge.start_date.desc()).all()
+    
+    if not challenges:
+        return {"challenges": [], "message": "Aucun challenge en cours."}
+    return {"challenges": [c.to_dict() for c in challenges]}
 
 @router.get("/{challenge_id}")
 def get_challenge(challenge_id: int, db: Session = Depends(get_db)):
