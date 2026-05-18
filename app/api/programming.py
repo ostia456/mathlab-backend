@@ -122,6 +122,40 @@ def submit_code(
 
     return {"submission": submission.to_dict(), "result": result}
 
+class CreateProgrammingRequest(BaseModel):
+    title: str
+    description: str
+    difficulty: str = 'Facile'
+    points: int = 100
+    example_input: str = ''
+    example_output: str = ''
+    starter_code: str = ''
+    test_cases: list = []
+
+@router.post("/create")
+def create_programming_challenge(
+    data: CreateProgrammingRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Crée un défi de programmation (admin seulement)."""
+    if not current_user.is_admin():
+        raise HTTPException(status_code=403, detail="Réservé aux administrateurs.")
+    
+    challenge = ProgrammingChallenge(
+        title=data.title,
+        description=data.description,
+        difficulty=data.difficulty,
+        points=data.points,
+        example_input=data.example_input,
+        example_output=data.example_output,
+        starter_code=data.starter_code,
+        test_cases=data.test_cases,
+        is_active=True,
+    )
+    db.add(challenge)
+    db.commit()
+    return {"message": "Défi créé.", "challenge": challenge.to_dict()}
 
 @router.get("/leaderboard")
 def get_global_leaderboard(db: Session = Depends(get_db)):
