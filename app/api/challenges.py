@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from pydantic import BaseModel, Field
-
+from sqlalchemy import distinct
 from app import SessionLocal
 from app.models.user import User
 from app.models.exercise import Exercise
@@ -50,7 +50,26 @@ def list_challenges(db: Session = Depends(get_db)):
     challenges = db.query(Challenge).order_by(desc(Challenge.start_date)).limit(10).all()
     return {"challenges": [c.to_dict() for c in challenges]}
 
-
+@router.get("/stats")
+def get_challenge_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Statistiques globales des challenges (admin seulement)."""
+    if not current_user.is_admin():
+        raise HTTPException(status_code=403, detail="Réservé aux administrateurs.")
+    
+    today = date.today()
+    return {
+        "total_challenges": db.query(Challenge).count(),
+        "active_challenges": db.query(Challenge).filter(
+            Challenge.start_date <= today,
+            Challenge.end_date >= today,
+            Challenge.is_active == True
+        ).count(),
+        "total_participants": db.query(ChallengeSubmission.user_id).distinct().count(),
+        "total_submissions": db.query(ChallengeSubmission).count(),
+    }
 @router.get("/active")
 def get_active_challenges(db: Session = Depends(get_db)):
     """Retourne tous les challenges en cours."""

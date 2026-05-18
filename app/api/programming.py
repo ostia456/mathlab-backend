@@ -104,7 +104,27 @@ def get_leaderboard(challenge_id: int, db: Session = Depends(get_db)):
         ]
     }
 
+@router.get("/leaderboard")
+def get_global_leaderboard(db: Session = Depends(get_db)):
+    """Classement global programmation."""
+    results = db.query(
+        User.first_name,
+        User.last_name,
+        func.sum(ProgrammingSubmission.score).label('total_score'),
+        func.min(ProgrammingSubmission.execution_time).label('best_time'),
+    ).join(ProgrammingSubmission).filter(
+        ProgrammingSubmission.status == 'success'
+    ).group_by(User.id).order_by(desc('total_score')).limit(20).all()
 
+    return {
+        "leaderboard": [
+            {
+                "name": f"{r[0]} {r[1]}",
+                "score": float(r[2] or 0),
+                "time": float(r[3] or 0) if r[3] else None,
+            } for r in results
+        ]
+    }
 # ── Exécution sécurisée ─────────────────────────────────────────────────────
 def execute_python_code(code: str, test_cases: list) -> dict:
     """Exécute le code Python dans un processus séparé."""
