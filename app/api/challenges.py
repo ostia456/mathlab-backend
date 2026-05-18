@@ -63,6 +63,21 @@ def get_leaderboard(challenge_id: int, db: Session = Depends(get_db)):
         ]
     }
 
+@router.delete("/{challenge_id}")
+def delete_challenge(
+    challenge_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Supprime un challenge (admin/super_admin seulement)."""
+    if not current_user.is_admin():
+        raise HTTPException(status_code=403, detail="Réservé aux administrateurs.")
+    
+    db.query(ChallengeSubmission).filter_by(challenge_id=challenge_id).delete()
+    db.query(ChallengeExercise).filter_by(challenge_id=challenge_id).delete()
+    db.query(Challenge).filter_by(id=challenge_id).delete()
+    db.commit()
+    return {"message": "Challenge supprimé."}
 
 @router.get("/{challenge_id}/exercises")
 def get_challenge_exercises(
