@@ -64,7 +64,34 @@ def get_leaderboard(challenge_id: int, db: Session = Depends(get_db)):
     }
 
 
-
+@router.get("/{challenge_id}/exercises")
+def get_challenge_exercises(
+    challenge_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Retourne les exercices d'un challenge avec les soumissions de l'utilisateur."""
+    challenge = db.query(Challenge).get(challenge_id)
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge introuvable.")
+    
+    exercises = db.query(ChallengeExercise).filter_by(challenge_id=challenge_id).order_by(ChallengeExercise.order_num).all()
+    submissions = db.query(ChallengeSubmission).filter_by(
+        challenge_id=challenge_id, user_id=current_user.id
+    ).all()
+    
+    return {
+        "exercises": [
+            {
+                "id": e.id,
+                "exercise_id": e.exercise_id,
+                "points": e.points,
+                "order_num": e.order_num,
+                "problem_data": db.query(Exercise).get(e.exercise_id).problem_data if db.query(Exercise).get(e.exercise_id) else None,
+            } for e in exercises
+        ],
+        "submissions": [s.to_dict() for s in submissions],
+    }
 class CreateChallengeRequest(BaseModel):
     template_id: str = Field(default='weekly_all')
     title: str
